@@ -1,10 +1,10 @@
 #![no_std]
 #![no_main]
 
+mod boot;
 use core::panic::PanicInfo;
 
-#[unsafe(no_mangle)]
-pub extern "C" fn main() -> ! {
+fn main(fdt_addr: usize) -> ! {
     loop {
         core::hint::spin_loop();
     }
