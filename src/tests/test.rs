@@ -1,5 +1,8 @@
 #[cfg(test)]
-use crate::{log::{self, LogLevel}, mutex::Mutex};
+use crate::{
+    log::{self, LogLevel},
+    mutex::Mutex,
+};
 
 #[test_case]
 fn mutex_lock_mutates_and_persists_value() {

@@ -2,7 +2,7 @@
 use crate::{print, println};
 use core::panic::PanicInfo;
 
-pub fn test_runner(tests: &[&dyn Testable]) {
+pub fn test_runner(tests: &[&dyn Testable]) -> ! {
     println!("Running {} tests", tests.len());
     for test in tests {
         test.run();
@@ -26,7 +26,6 @@ pub trait Testable {
     fn run(&self) -> ();
 }
 
-#[cfg(test)]
 impl<T> Testable for T
 where
     T: Fn(),
@@ -36,9 +35,4 @@ where
         self();
         println!("[ok]");
     }
-}
-
-#[test_case]
-fn super_simple_assertion() {
-    assert_eq!(1, 1);
 }

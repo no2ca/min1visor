@@ -16,6 +16,10 @@ mod tests {
     pub mod runner;
     pub mod test;
 }
+mod hal {
+    pub mod aarch64;
+    pub mod traits;
+}
 
 use crate::{log::LogLevel, mutex::Mutex};
 #[allow(unused_imports)]
@@ -25,6 +29,8 @@ use core::sync::atomic::AtomicU8;
 static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::invalid());
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
 
+/// これはstart.rsの_startから呼ばれる
+/// This is called from _start in start.rs
 fn main() -> ! {
     log_info!("main", "Hello from main!");
 

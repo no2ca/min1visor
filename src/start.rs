@@ -29,13 +29,13 @@ pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
     let Ok(dtb) = dtb::Dtb::new(fdt_addr) else {
         return 4;
     };
-    if let Err(e) = init_serial_port(&dtb) {
+    if let Err(e) = init_pl011_serial_port(&dtb) {
         return e;
     };
     crate::main();
 }
 
-fn init_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
+fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     let mut pl011 = None;
     loop {
         pl011 = dtb.search_node_by_compatible(b"arm,pl011", pl011.as_ref());
