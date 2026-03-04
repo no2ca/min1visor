@@ -39,7 +39,6 @@ where
 }
 
 #[test_case]
-#[unsafe(no_mangle)]
 fn super_simple_assertion() {
     assert_eq!(1, 1);
 }

@@ -14,6 +14,7 @@ mod mutex;
 mod serial;
 mod tests {
     pub mod runner;
+    pub mod test;
 }
 
 use crate::{log::LogLevel, mutex::Mutex};
