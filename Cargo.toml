@@ -1,11 +1,14 @@
 [package]
-name = "hv1"
+name = "min1visor"
 version = "0.1.0"
 edition = "2024"
 
+[dependencies]
+qemu-exit = "3.0.2"
+
 [[bin]]
-name = "hv1"
-test = false
+name = "min1visor"
+test = true
 bench = false
 
 [profile.dev]

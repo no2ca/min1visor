@@ -10,7 +10,7 @@
 //! - `6`: PL011 ノードの `reg` プロパティを読めない
 //! - `7`: PL011 ドライバ (`drivers::pl011::Pl011::new`) の初期化に失敗
 //!
-use core::{ffi::CStr, mem::MaybeUninit, slice};
+use core::{ffi::CStr, slice};
 
 use crate::{PL011_DEVICE, drivers, dtb, serial};
 

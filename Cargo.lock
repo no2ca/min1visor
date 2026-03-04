@@ -3,5 +3,14 @@
 version = 4
 
 [[package]]
-name = "hv1"
+name = "min1visor"
 version = "0.1.0"
+dependencies = [
+ "qemu-exit",
+]
+
+[[package]]
+name = "qemu-exit"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bb0fd6580eeed0103c054e3fba2c2618ff476943762f28a645b63b8692b21c9"
