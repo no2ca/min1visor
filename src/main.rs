@@ -6,14 +6,15 @@ mod start;
 mod drivers {
     pub mod pl011;
 }
-mod serial;
 mod log;
+mod mutex;
+mod serial;
 
-use core::{mem::MaybeUninit, panic::PanicInfo, sync::atomic::AtomicU8};
+use core::{panic::PanicInfo, sync::atomic::AtomicU8};
 
-use crate::log::LogLevel;
+use crate::{log::LogLevel, mutex::Mutex};
 
-static mut PL011_DEVICE: MaybeUninit<drivers::pl011::Pl011> = MaybeUninit::uninit();
+static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::invalid());
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
 
 fn main() -> ! {

@@ -59,10 +59,8 @@ fn init_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range) else {
         return Err(7);
     };
-    unsafe { (&raw mut PL011_DEVICE).write(MaybeUninit::new(pl011)) };
-    serial::init_default_serial_port(unsafe {
-        (&raw mut PL011_DEVICE).as_ref().unwrap().assume_init_ref()
-    });
+    *PL011_DEVICE.lock() = pl011;
+    serial::init_default_serial_port(&PL011_DEVICE);
     Ok(())
 }
 

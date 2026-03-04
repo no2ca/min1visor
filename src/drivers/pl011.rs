@@ -21,6 +21,9 @@ const UART_FR_TXFF: u16 = 1 << 5;
 const UART_FR_RXFE: u16 = 1 << 4;
 
 impl Pl011 {
+    pub const fn invalid() -> Self {
+        Self { base_address: 0 }
+    }
     pub fn new(base_address: usize, range: usize) -> Result<Self, ()> {
         if range < UART_SIZE {
             return Err(());

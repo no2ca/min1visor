@@ -140,8 +140,7 @@ impl Dtb {
     }
 
     fn get_struct_offset(&self) -> usize {
-        self.header as *const _ as usize
-            + u32::from_be(self.header().off_dt_struct) as usize
+        self.header as *const _ as usize + u32::from_be(self.header().off_dt_struct) as usize
     }
 
     fn get_struct_size(&self) -> usize {
@@ -149,8 +148,7 @@ impl Dtb {
     }
 
     fn get_string_offset(&self) -> usize {
-        self.header as *const _ as usize
-            + u32::from_be(self.header().off_dt_strings) as usize
+        self.header as *const _ as usize + u32::from_be(self.header().off_dt_strings) as usize
     }
 
     fn get_string_size(&self) -> usize {
