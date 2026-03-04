@@ -5,6 +5,8 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use crate::hal::{self, traits::InterruptControl};
+
 pub struct Mutex<T: ?Sized> {
     lock: AtomicBool,
     data: UnsafeCell<T>,
@@ -15,6 +17,8 @@ pub struct MutexGuard<'a, T: ?Sized + 'a> {
     data: &'a mut T,
     // 獲得した値がスレッド間で共有されないようにする
     // 否定トレイトが完全実装されたら以下を使用できる
+    // Ensure that acquired values are not shared between threads
+    // The following can be used once negative traits are fully implemented
     // impl<T: ?Sized> !Send for MutexGuard<'_, T> {}
     _forbid_send: PhantomData<*const ()>,
 }
@@ -34,6 +38,7 @@ impl<T: ?Sized> Mutex<T> {
             while self.lock.load(Ordering::Relaxed) {
                 core::hint::spin_loop();
             }
+            let state = unsafe { hal::aarch64::Interrupt::disable_interrupts() };
             if self
                 .lock
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -45,6 +50,7 @@ impl<T: ?Sized> Mutex<T> {
                     _forbid_send: PhantomData,
                 };
             }
+            unsafe { hal::aarch64::Interrupt::restore_interrupts(state) };
         }
     }
 }
