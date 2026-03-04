@@ -1,17 +1,27 @@
 #![no_std]
 #![no_main]
 
-mod boot;
-use core::panic::PanicInfo;
+mod dtb;
+mod start;
+mod drivers {
+    pub mod pl011;
+}
+mod serial;
 
-fn main(fdt_addr: usize) -> ! {
+use core::{mem::MaybeUninit, panic::PanicInfo};
+
+static mut PL011_DEVICE: MaybeUninit<drivers::pl011::Pl011> = MaybeUninit::uninit();
+
+fn main() -> ! {
+    println!("Hello from main!");
     loop {
         core::hint::spin_loop();
     }
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    println!("{}", info);
     loop {
         core::hint::spin_loop();
     }
