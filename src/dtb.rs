@@ -60,6 +60,22 @@ impl Dtb {
         }
         Ok(Self { header: fdt_header })
     }
+
+    #[inline]
+    fn header(&self) -> &FdtHeader {
+        unsafe { &*self.header }
+    }
+
+    #[inline]
+    fn read_u8(&self, address: usize) -> u8 {
+        unsafe { *(address as *const u8) }
+    }
+
+    #[inline]
+    fn read_be_u32_node(&self, address: usize) -> Result<u32, ()> {
+        Ok(u32::from_be_bytes(*self.read_node(address)?))
+    }
+
     fn compare_name_segment(
         &self,
         name_offset: u32,
@@ -73,12 +89,12 @@ impl Dtb {
 
         let mut p = self.get_string_offset() + name_offset;
         for c in name {
-            if *c != unsafe { *(p as *const u8) } {
+            if *c != self.read_u8(p) {
                 return Ok(false);
             }
             p += 1;
         }
-        let l = unsafe { *(p as *const u8) };
+        let l = self.read_u8(p);
         for e in delimiter.iter().chain(b"\0") {
             if *e == l {
                 return Ok(true);
@@ -94,8 +110,8 @@ impl Dtb {
         delimiter: &[u8],
     ) -> Result<bool, ()> {
         for c in name {
-            if *c != unsafe { *(*pointer as *const u8) } {
-                while unsafe { *(*pointer as *const u8) } != b'\0' {
+            if *c != self.read_u8(*pointer) {
+                while self.read_u8(*pointer) != b'\0' {
                     *pointer += 1;
                 }
                 *pointer += 1;
@@ -104,10 +120,10 @@ impl Dtb {
             }
             *pointer += 1;
         }
-        let l = unsafe { *(*pointer as *const u8) };
+        let l = self.read_u8(*pointer);
         for e in delimiter.iter().chain(b"\0") {
             if *e == l {
-                while unsafe { *(*pointer as *const u8) } != b'\0' {
+                while self.read_u8(*pointer) != b'\0' {
                     *pointer += 1;
                 }
                 *pointer += 1;
@@ -115,7 +131,7 @@ impl Dtb {
                 return Ok(true);
             }
         }
-        while unsafe { *(*pointer as *const u8) } != b'\0' {
+        while self.read_u8(*pointer) != b'\0' {
             *pointer += 1;
         }
         *pointer += 1;
@@ -125,20 +141,20 @@ impl Dtb {
 
     fn get_struct_offset(&self) -> usize {
         self.header as *const _ as usize
-            + u32::from_be(unsafe { &*self.header }.off_dt_struct) as usize
+            + u32::from_be(self.header().off_dt_struct) as usize
     }
 
     fn get_struct_size(&self) -> usize {
-        u32::from_be(unsafe { &*self.header }.size_dt_struct) as usize
+        u32::from_be(self.header().size_dt_struct) as usize
     }
 
     fn get_string_offset(&self) -> usize {
         self.header as *const _ as usize
-            + u32::from_be(unsafe { &*self.header }.off_dt_strings) as usize
+            + u32::from_be(self.header().off_dt_strings) as usize
     }
 
     fn get_string_size(&self) -> usize {
-        u32::from_be(unsafe { &*self.header }.size_dt_strings) as usize
+        u32::from_be(self.header().size_dt_strings) as usize
     }
 
     fn read_node(&self, address: usize) -> Result<&[u8; Self::FDT_TOKEN_BYTE], ()> {
@@ -179,7 +195,7 @@ impl Dtb {
                 }
                 Self::FDT_PROP => {
                     *pointer += Self::FDT_TOKEN_BYTE;
-                    let len = u32::from_be_bytes(*self.read_node(*pointer)?);
+                    let len = self.read_be_u32_node(*pointer)?;
                     *pointer += size_of::<u32>();
                     /* Skip Name Segment */
                     *pointer += size_of::<u32>();
@@ -200,9 +216,9 @@ impl Dtb {
         size_cells: &mut u32,
     ) -> Result<(), ()> {
         if self.compare_name_segment(name_segment, &Self::PROP_ADDRESS_CELLS, &[])? {
-            *address_cells = u32::from_be_bytes(*self.read_node(pointer)?);
+            *address_cells = self.read_be_u32_node(pointer)?;
         } else if self.compare_name_segment(name_segment, &Self::PROP_SIZE_CELLS, &[])? {
-            *size_cells = u32::from_be_bytes(*self.read_node(pointer)?);
+            *size_cells = self.read_be_u32_node(pointer)?;
         }
         Ok(())
     }
@@ -246,9 +262,9 @@ impl Dtb {
                 }
                 Self::FDT_PROP => {
                     *pointer += Self::FDT_TOKEN_BYTE;
-                    let len = u32::from_be_bytes(*self.read_node(*pointer)?);
+                    let len = self.read_be_u32_node(*pointer)?;
                     *pointer += size_of::<u32>();
-                    let name_segment = u32::from_be_bytes(*self.read_node(*pointer)?);
+                    let name_segment = self.read_be_u32_node(*pointer)?;
                     *pointer += size_of::<u32>();
                     self.check_address_and_size_cells(
                         name_segment,
@@ -304,7 +320,7 @@ impl Dtb {
             return Err(());
         }
         *pointer += Self::FDT_TOKEN_BYTE;
-        while unsafe { *(*pointer as *const u8) } != b'\0' {
+        while self.read_u8(*pointer) != b'\0' {
             *pointer += 1;
         }
         *pointer += 1;
@@ -333,9 +349,9 @@ impl Dtb {
                 }
                 Self::FDT_PROP => {
                     *pointer += Self::FDT_TOKEN_BYTE;
-                    let len = u32::from_be_bytes(*self.read_node(*pointer)?);
+                    let len = self.read_be_u32_node(*pointer)?;
                     *pointer += size_of::<u32>();
-                    let name_segment = u32::from_be_bytes(*self.read_node(*pointer)?);
+                    let name_segment = self.read_be_u32_node(*pointer)?;
                     *pointer += size_of::<u32>();
                     self.check_address_and_size_cells(
                         name_segment,
@@ -427,9 +443,9 @@ impl Dtb {
                 }
                 Self::FDT_PROP => {
                     p += Self::FDT_TOKEN_BYTE;
-                    let len = u32::from_be_bytes(*self.read_node(p).ok()?);
+                    let len = self.read_be_u32_node(p).ok()?;
                     p += size_of::<u32>();
-                    let name_segment = u32::from_be_bytes(*self.read_node(p).ok()?);
+                    let name_segment = self.read_be_u32_node(p).ok()?;
                     p += size_of::<u32>();
                     self.check_address_and_size_cells(
                         name_segment,
@@ -460,7 +476,15 @@ impl Dtb {
 
     pub fn is_node_operational(&self, node: &DtbNode) -> bool {
         self.get_property(node, &Self::PROP_STATUS)
-            .map(|p| unsafe { *(p.address as *const [u8; 5]) } == Self::PROP_STATUS_OKAY)
+            .map(|p| {
+                [
+                    self.read_u8(p.address),
+                    self.read_u8(p.address + 1),
+                    self.read_u8(p.address + 2),
+                    self.read_u8(p.address + 3),
+                    self.read_u8(p.address + 4),
+                ] == Self::PROP_STATUS_OKAY
+            })
             .unwrap_or(true)
     }
 
@@ -469,14 +493,14 @@ impl Dtb {
         let mut skip = false;
         'outer: while p < info.len {
             if skip {
-                if unsafe { *((info.address + (p as usize)) as *const u8) } == b'\0' {
+                if self.read_u8(info.address + (p as usize)) == b'\0' {
                     skip = false;
                 }
                 p += 1;
                 continue;
             }
             for c in compatible.iter().chain(b"\0") {
-                if unsafe { *((info.address + (p as usize)) as *const u8) } != *c {
+                if self.read_u8(info.address + (p as usize)) != *c {
                     skip = true;
                     continue 'outer;
                 }
@@ -504,13 +528,12 @@ impl Dtb {
         }
         for i in 0..(info.address_cells * 4) {
             address <<= 8;
-            address |= unsafe { *((info.address + offset + i as usize) as *const u8) } as usize;
+            address |= self.read_u8(info.address + offset + i as usize) as usize;
         }
         for i in 0..(info.size_cells * 4) {
             size <<= 8;
-            size |= unsafe {
-                *((info.address + offset + (info.address_cells * 4 + i) as usize) as *const u8)
-            } as usize;
+            size |= self.read_u8(info.address + offset + (info.address_cells * 4 + i) as usize)
+                as usize;
         }
         Some((address, size))
     }
