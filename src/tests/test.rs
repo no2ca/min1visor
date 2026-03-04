@@ -1,8 +1,20 @@
 #[cfg(test)]
 use crate::{
+    allocator::linked_list::LinkedListAllocator,
     log::{self, LogLevel},
     mutex::Mutex,
 };
+
+const TEST_HEAP_START: usize = 0x5000_0000;
+const TEST_HEAP_SIZE: usize = 0x1000_0000;
+
+fn make_allocator_with_test_heap() -> LinkedListAllocator {
+    let mut allocator = LinkedListAllocator::new();
+    unsafe {
+        allocator.init(TEST_HEAP_START, TEST_HEAP_SIZE);
+    }
+    allocator
+}
 
 #[test_case]
 fn mutex_lock_mutates_and_persists_value() {
@@ -87,4 +99,47 @@ fn log_level_strings_are_stable() {
     assert_eq!(log::level_str(LogLevel::Warn), "WARN");
     assert_eq!(log::level_str(LogLevel::Info), "INFO");
     assert_eq!(log::level_str(LogLevel::Debug), "DEBUG");
+}
+
+#[test_case]
+fn linked_list_alloc_returns_heap_start_for_first_fit() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    let ptr = unsafe { allocator.alloc(0x10, 0x10) };
+    assert_eq!(ptr as usize, TEST_HEAP_START);
+}
+
+#[test_case]
+fn linked_list_alloc_preserves_alignment() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    let ptr = unsafe { allocator.alloc(0x20, 0x1000) };
+    assert_eq!((ptr as usize) % 0x1000, 0);
+    assert_eq!(ptr as usize, TEST_HEAP_START);
+}
+
+#[test_case]
+fn linked_list_alloc_exhausts_range_and_then_fails() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    let whole = unsafe { allocator.alloc(TEST_HEAP_SIZE, 0x10) };
+    assert_eq!(whole as usize, TEST_HEAP_START);
+
+    let next = unsafe { allocator.alloc(0x10, 0x10) };
+    assert!(next.is_null());
+}
+
+#[test_case]
+fn linked_list_dealloc_makes_region_reusable() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    let ptr = unsafe { allocator.alloc(0x1000, 0x1000) };
+    assert_eq!(ptr as usize, TEST_HEAP_START);
+
+    unsafe {
+        allocator.dealloc(ptr, 0x1000);
+    }
+
+    let reused = unsafe { allocator.alloc(0x1000, 0x1000) };
+    assert_eq!(reused as usize, TEST_HEAP_START);
 }

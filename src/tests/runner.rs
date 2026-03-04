@@ -2,10 +2,19 @@
 use crate::{print, println};
 use core::panic::PanicInfo;
 
+const TEST_FILTER: Option<&str> = Some("linked_list");
+
 pub fn test_runner(tests: &[&dyn Testable]) -> ! {
-    println!("Running {} tests", tests.len());
+    let selected = tests
+        .iter()
+        .filter(|test| TEST_FILTER.is_none_or(|f| test.name().contains(f)))
+        .count();
+    println!("Running {} tests", selected);
+
     for test in tests {
-        test.run();
+        if TEST_FILTER.is_none_or(|f| test.name().contains(f)) {
+            test.run();
+        }
     }
     use qemu_exit::QEMUExit;
 
@@ -23,6 +32,7 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 pub trait Testable {
+    fn name(&self) -> &'static str;
     fn run(&self) -> ();
 }
 
@@ -30,8 +40,12 @@ impl<T> Testable for T
 where
     T: Fn(),
 {
+    fn name(&self) -> &'static str {
+        core::any::type_name::<T>()
+    }
+
     fn run(&self) {
-        print!("{}...\t", core::any::type_name::<T>());
+        print!("{}...\t", self.name());
         self();
         println!("[ok]");
     }
