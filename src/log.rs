@@ -1,4 +1,6 @@
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::Ordering;
+
+use crate::LOG_LEVEL;
 
 #[allow(unused)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -9,8 +11,6 @@ pub enum LogLevel {
     Info = 3,
     Debug = 4,
 }
-
-static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
 
 #[inline]
 pub fn set_log_level(level: LogLevel) {
