@@ -29,7 +29,7 @@ use core::sync::atomic::AtomicU8;
 static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::invalid());
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
 
-/// これはstart.rsの_startから呼ばれる
+/// start.rsの_startから呼ばれる
 /// This is called from _start in start.rs
 fn main() -> ! {
     log_info!("main", "Hello from main!");
@@ -37,9 +37,16 @@ fn main() -> ! {
     #[cfg(test)]
     test_main();
 
-    loop {
-        core::hint::spin_loop();
-    }
+    let currentel = hal::aarch64::get_currentel() >> 2;
+    log_info!("main", "CurrentEL: {}", currentel);
+    assert_eq!(currentel, 2);
+    
+    hal::aarch64::setup_hypervisor_registers();
+    hal::aarch64::boot_vm(el1_main as *const fn() as usize);
+}
+
+extern "C" fn el1_main() {
+    core::hint::spin_loop();
 }
 
 #[cfg(not(test))]
@@ -50,3 +57,4 @@ fn panic(info: &PanicInfo) -> ! {
         core::hint::spin_loop();
     }
 }
+
