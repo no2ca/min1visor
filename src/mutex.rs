@@ -5,7 +5,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use crate::hal::{self, traits::InterruptControl};
+use crate::hal::{self, InterruptControl};
 
 pub struct Mutex<T: ?Sized> {
     lock: AtomicBool,
@@ -38,7 +38,7 @@ impl<T: ?Sized> Mutex<T> {
             while self.lock.load(Ordering::Relaxed) {
                 core::hint::spin_loop();
             }
-            let state = unsafe { hal::aarch64::Interrupt::disable_interrupts() };
+            let state = unsafe { hal::Interrupts::disable_interrupts() };
             if self
                 .lock
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -50,7 +50,7 @@ impl<T: ?Sized> Mutex<T> {
                     _forbid_send: PhantomData,
                 };
             }
-            unsafe { hal::aarch64::Interrupt::restore_interrupts(state) };
+            unsafe { hal::Interrupts::restore_interrupts(state) };
         }
     }
 }
