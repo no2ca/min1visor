@@ -157,3 +157,29 @@ fn linked_list_dealloc_makes_region_reusable() {
     let reused = unsafe { allocator.alloc(0x1000, 0x1000) };
     assert_eq!(reused as usize, TEST_HEAP_START);
 }
+
+#[test_case]
+fn linked_list_reserve_removes_reserved_range_from_front() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    allocator.reserve(TEST_HEAP_START, 0x1000);
+
+    let ptr = unsafe { allocator.alloc(0x1000, 0x1000) };
+    assert_eq!(ptr as usize, TEST_HEAP_START + 0x1000);
+}
+
+#[test_case]
+fn linked_list_reserve_splits_free_region_around_reserved_range() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    allocator.reserve(TEST_HEAP_START + 0x2000, 0x1000);
+
+    let first = unsafe { allocator.alloc(0x1000, 0x1000) };
+    assert_eq!(first as usize, TEST_HEAP_START);
+
+    let second = unsafe { allocator.alloc(0x1000, 0x1000) };
+    assert_eq!(second as usize, TEST_HEAP_START + 0x1000);
+
+    let third = unsafe { allocator.alloc(0x1000, 0x1000) };
+    assert_eq!(third as usize, TEST_HEAP_START + 0x3000);
+}

@@ -52,9 +52,32 @@ impl LinkedListAllocator {
         }
     }
 
+    /// (addr, size)からListNodeとして表現可能なfree regionを1個作る
+    /// 無理ならnextをそのまま返す
+    fn region_if_representable(
+        addr: usize,
+        size: usize,
+        next: Option<&'static mut ListNode>,
+    ) -> Option<&'static mut ListNode> {
+        let aligned_addr = align_up(addr, core::mem::align_of::<ListNode>());
+        let adjusted_size = size.saturating_sub(aligned_addr - addr);
+
+        if adjusted_size >= core::mem::size_of::<ListNode>() {
+            let mut node = ListNode::new(adjusted_size);
+            node.next = next;
+            let node_ptr = aligned_addr as *mut ListNode;
+            unsafe {
+                node_ptr.write(node);
+                Some(&mut *node_ptr)
+            }
+        } else {
+            next
+        }
+    }
+
     /// 使用可能なregionを探してリストから外す
     /// ノードと開始アドレスを返す
-    fn find_region(&mut self, size: usize, align: usize) -> Option<(&'static mut ListNode, usize)> {
+    fn find_and_take_region(&mut self, size: usize, align: usize) -> Option<(&'static mut ListNode, usize)> {
         let mut current = &mut self.head;
         while let Some(ref mut region) = current.next {
             if let Ok(alloc_start) = Self::validate_region(&region, size, align) {
@@ -71,6 +94,7 @@ impl LinkedListAllocator {
     }
 
     /// 使用可能なregionか判定する
+    /// アライメントを行う
     fn validate_region(region: &ListNode, size: usize, align: usize) -> Result<usize, ()> {
         let alloc_start = align_up(region.start_addr(), align);
         let alloc_end = alloc_start.checked_add(size).ok_or(())?;
@@ -90,7 +114,7 @@ impl LinkedListAllocator {
     }
 
     pub unsafe fn alloc(&mut self, size: usize, align: usize) -> *mut u8 {
-        if let Some((region, alloc_start)) = self.find_region(size, align) {
+        if let Some((region, alloc_start)) = self.find_and_take_region(size, align) {
             let alloc_end = alloc_start.checked_add(size).expect("overflow");
             let excess_size = region.end_addr() - alloc_end;
             if excess_size > 0 {
@@ -103,10 +127,38 @@ impl LinkedListAllocator {
             ptr::null_mut()
         }
     }
-
+    
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, size: usize) {
         unsafe {
             self.add_free_region(ptr as usize, size);
+        }
+    }
+
+    /// 指定した範囲を使用済みとして空きリストから除外する
+    pub fn reserve(&mut self, addr: usize, size: usize) {
+        let reserve_end = addr.checked_add(size).expect("overflow");
+        let mut current = &mut self.head;
+
+        while let Some(region) = current.next.take() {
+            let region_start = region.start_addr();
+            let region_end = region.end_addr();
+            let next = region.next.take();
+
+            if reserve_end <= region_start || region_end <= addr {
+                region.next = next;
+                current.next = Some(region);
+                current = current.next.as_mut().unwrap();
+                continue;
+            }
+
+            current.next = next;
+
+            // 重なっている部分の大きさを前半と後半に分けて考える
+            let prefix_size = addr.saturating_sub(region_start);
+            let suffix_start = reserve_end.max(region_start);
+            let suffix_size = region_end.saturating_sub(suffix_start);
+            let next = Self::region_if_representable(suffix_start, suffix_size, current.next.take());
+            current.next = Self::region_if_representable(region_start, prefix_size, next);
         }
     }
 }
