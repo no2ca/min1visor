@@ -1,7 +1,7 @@
 use crate::hal;
 use core::arch::asm;
 
-// HCR_EL2 
+// HCR_EL2
 // 下位レベルでの挙動を操作するレジスタ
 const HCR_EL2_API: u64 = 1 << 41;
 const HCR_EL2_RW: u64 = 1 << 31;
@@ -28,7 +28,7 @@ pub struct AArch64Hypervisor;
 impl hal::HypervisorControl for AArch64Hypervisor {
     fn setup_hypervisor() {
         // RWはEL1でAArch64として動作させるためのメンバ
-        let hcr_el2 = HCR_EL2_RW | HCR_EL2_API; 
+        let hcr_el2 = HCR_EL2_RW | HCR_EL2_API;
         unsafe { set_hcr_el2(hcr_el2) };
     }
     fn boot_vm(entry_point: usize) -> ! {
@@ -93,4 +93,10 @@ unsafe fn eret(x0: u64, x1: u64, x2: u64, x3: u64) -> ! {
              in("x3") x3,
              options(noreturn))
     }
+}
+
+pub fn get_stack_pointer() -> u64 {
+    let sp: u64;
+    unsafe { asm!("mov {}, sp", out(reg) sp) };
+    sp
 }

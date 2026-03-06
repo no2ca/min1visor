@@ -32,10 +32,17 @@ impl LinkedListAllocator {
         }
     }
 
+    /// # Safety
+    /// initでメモリの内容を書き換えるため利用している領域は除外する必要がある
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
-        unsafe {
-            self.add_free_region(heap_start, heap_size);
-        }
+        unsafe { self.add_free_region(heap_start, heap_size) };
+    }
+
+    /// # Safety
+    /// 指定した領域内にListNodeとして表現可能なfree regionを追加する
+    pub unsafe fn insert_free_region(&mut self, addr: usize, size: usize) {
+        let next = self.head.next.take();
+        self.head.next = Self::region_if_representable(addr, size, next);
     }
 
     /// 空きリストの先頭にノードを追加する
@@ -77,7 +84,11 @@ impl LinkedListAllocator {
 
     /// 使用可能なregionを探してリストから外す
     /// ノードと開始アドレスを返す
-    fn find_and_take_region(&mut self, size: usize, align: usize) -> Option<(&'static mut ListNode, usize)> {
+    fn find_and_take_region(
+        &mut self,
+        size: usize,
+        align: usize,
+    ) -> Option<(&'static mut ListNode, usize)> {
         let mut current = &mut self.head;
         while let Some(ref mut region) = current.next {
             if let Ok(alloc_start) = Self::validate_region(&region, size, align) {
@@ -127,7 +138,7 @@ impl LinkedListAllocator {
             ptr::null_mut()
         }
     }
-    
+
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, size: usize) {
         unsafe {
             self.add_free_region(ptr as usize, size);
@@ -157,7 +168,8 @@ impl LinkedListAllocator {
             let prefix_size = addr.saturating_sub(region_start);
             let suffix_start = reserve_end.max(region_start);
             let suffix_size = region_end.saturating_sub(suffix_start);
-            let next = Self::region_if_representable(suffix_start, suffix_size, current.next.take());
+            let next =
+                Self::region_if_representable(suffix_start, suffix_size, current.next.take());
             current.next = Self::region_if_representable(region_start, prefix_size, next);
         }
     }

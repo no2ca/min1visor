@@ -12,26 +12,36 @@
 //!
 use core::{ffi::CStr, slice};
 
-use crate::{PL011_DEVICE, drivers, dtb, serial};
+use crate::{ALLOCATOR, PL011_DEVICE, drivers, dtb, elf, paging, serial};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
-    if argc != 1 {
+    let stack_pointer = crate::arch::aarch64::get_stack_pointer() as usize;
+    if argc != 2 {
         return 1;
     }
     let args = unsafe { slice::from_raw_parts(argv, argc) };
-    let Ok(fdt_addr_str) = unsafe { CStr::from_ptr(args[0]) }.to_str() else {
+    let Ok(dtb_addr_str) = unsafe { CStr::from_ptr(args[0]) }.to_str() else {
         return 2;
     };
-    let Some(fdt_addr) = str_to_usize(fdt_addr_str) else {
+    let Some(dtb_address) = str_to_usize(dtb_addr_str) else {
         return 3;
     };
-    let Ok(dtb) = dtb::Dtb::new(fdt_addr) else {
+    let Ok(dtb) = dtb::Dtb::new(dtb_address) else {
         return 4;
     };
     if let Err(e) = init_pl011_serial_port(&dtb) {
         return e;
     };
+    // これ以前はprintln!()などを使用しない
+
+    // メモリ管理のセットアップ
+    let elf_addr_str = unsafe { CStr::from_ptr(args[1]) }
+        .to_str()
+        .expect("Failed to get argv[1]");
+    let elf_address = str_to_usize(elf_addr_str).expect("Failed to convert the address");
+    setup_memory(&dtb, dtb_address, elf_address, stack_pointer);
+
     crate::main();
 }
 
@@ -62,6 +72,51 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     *PL011_DEVICE.lock() = pl011;
     serial::init_default_serial_port(&PL011_DEVICE);
     Ok(())
+}
+
+pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stack_pointer: usize) {
+    let memory = dtb
+        .search_node(b"memory", None)
+        .expect("Expected memory node.");
+    let (ram_start, ram_size) = dtb
+        .read_reg_property(&memory, 0)
+        .expect("Expected reg entry");
+    let ram_end = ram_start + ram_size;
+    crate::println!("RAM is [{:#X} ~ {:#X}]", ram_start, ram_end);
+
+    // DTB領域を確認
+    crate::println!(
+        "DTB is [{:#X} ~ {:#X}]",
+        dtb_address,
+        dtb_address + dtb.get_total_size()
+    );
+
+    // ハイパーバイザー自身の領域を確認
+    let mut elf_end: usize = 0;
+    let elf_header = elf::Elf64Header::new(elf_address).expect("Invalid ELF Header");
+    for (i, p) in elf_header.get_program_headers().enumerate() {
+        if p.get_segment_type() == elf::ELF_PROGRAM_HEADER_SEGMENT_LOAD {
+            let start = p.get_physical_address() as usize;
+            let size = p.get_memory_size() as usize;
+            crate::println!(
+                "ELF segment ({}) is [{:#X} ~ {:#X}]",
+                i,
+                start,
+                start + size
+            );
+            elf_end = elf_end.max(start + size);
+        }
+    }
+
+    // Stack領域を確保
+    const STACK_SIZE: usize = 0x10000;
+    let stack_end = ((stack_pointer - 1) & !(paging::PAGE_SIZE - 1)) + paging::PAGE_SIZE;
+    let stack_start = stack_end - STACK_SIZE;
+    crate::println!("Reserve [{:#X} ~ {:#X}] for Stack", stack_start, stack_end);
+
+    // メモリを初期化
+    crate::println!("Initialize heap [{:#X} ~ {:#X}]", elf_end, stack_start);
+    unsafe { ALLOCATOR.lock().init(elf_end, stack_start) };
 }
 
 fn str_to_usize(s: &str) -> Option<usize> {

@@ -139,6 +139,10 @@ impl Dtb {
         Ok(false)
     }
 
+    pub fn get_total_size(&self) -> usize {
+        u32::from_be(self.header().total_size) as usize
+    }
+
     fn get_struct_offset(&self) -> usize {
         self.header as *const _ as usize + u32::from_be(self.header().off_dt_struct) as usize
     }
