@@ -37,14 +37,17 @@ static ALLOCATOR: Mutex<LinkedListAllocator> = Mutex::new(LinkedListAllocator::n
 /// This is called from _start in start.rs
 fn main() -> ! {
     log::set_log_level(LogLevel::Debug);
-    log_info!("main", "Hello from main!");
+    log_info!("Hello from main!");
 
     #[cfg(test)]
     test_main();
 
-    let currentel = arch::aarch64::get_currentel() >> 2;
-    log_info!("main", "CurrentEL: {}", currentel);
-    assert_eq!(currentel, 2);
+    #[cfg(target_arch = "aarch64")]
+    {
+        let currentel = arch::aarch64::get_currentel() >> 2;
+        log_info!("CurrentEL: {}", currentel);
+        assert_eq!(currentel, 2);
+    }
 
     hal::HypervisorLevel::setup_hypervisor();
     hal::HypervisorLevel::boot_vm(el1_main as *const fn() as usize);

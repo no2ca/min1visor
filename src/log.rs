@@ -32,6 +32,30 @@ pub fn level_str(level: LogLevel) -> &'static str {
     }
 }
 
+#[doc(hidden)]
+#[inline]
+pub fn current_function_name(type_name: &'static str) -> &'static str {
+    let without_probe = type_name
+        .rsplit_once("::__log_fn_name_probe")
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(type_name);
+    let without_closure = without_probe.trim_end_matches("::{{closure}}");
+
+    without_closure
+        .rsplit("::")
+        .next()
+        .unwrap_or(without_closure)
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __log_current_component {
+    () => {{
+        fn __log_fn_name_probe() {}
+        $crate::log::current_function_name(core::any::type_name_of_val(&__log_fn_name_probe))
+    }};
+}
+
 #[macro_export]
 macro_rules! log {
     ($level:expr, $component:expr, $($arg:tt)*) => {
@@ -48,28 +72,60 @@ macro_rules! log {
 
 #[macro_export]
 macro_rules! log_error {
-    ($component:expr, $($arg:tt)*) => {
-        $crate::log!($crate::log::LogLevel::Error, $component, $($arg)*)
+    ($component:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!($crate::log::LogLevel::Error, $component, $fmt $(, $arg)*)
+    };
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!(
+            $crate::log::LogLevel::Error,
+            $crate::__log_current_component!(),
+            $fmt
+            $(, $arg)*
+        )
     };
 }
 
 #[macro_export]
 macro_rules! log_warn {
-    ($component:expr, $($arg:tt)*) => {
-        $crate::log!($crate::log::LogLevel::Warn, $component, $($arg)*)
+    ($component:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!($crate::log::LogLevel::Warn, $component, $fmt $(, $arg)*)
+    };
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!(
+            $crate::log::LogLevel::Warn,
+            $crate::__log_current_component!(),
+            $fmt
+            $(, $arg)*
+        )
     };
 }
 
 #[macro_export]
 macro_rules! log_info {
-    ($component:expr, $($arg:tt)*) => {
-        $crate::log!($crate::log::LogLevel::Info, $component, $($arg)*)
+    ($component:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!($crate::log::LogLevel::Info, $component, $fmt $(, $arg)*)
+    };
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!(
+            $crate::log::LogLevel::Info,
+            $crate::__log_current_component!(),
+            $fmt
+            $(, $arg)*
+        )
     };
 }
 
 #[macro_export]
 macro_rules! log_debug {
-    ($component:expr, $($arg:tt)*) => {
-        $crate::log!($crate::log::LogLevel::Debug, $component, $($arg)*)
+    ($component:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!($crate::log::LogLevel::Debug, $component, $fmt $(, $arg)*)
+    };
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::log!(
+            $crate::log::LogLevel::Debug,
+            $crate::__log_current_component!(),
+            $fmt
+            $(, $arg)*
+        )
     };
 }

@@ -2,7 +2,7 @@
 use crate::{print, println};
 use core::panic::PanicInfo;
 
-const TEST_FILTER: Option<&str> = Some("linked_list");
+const TEST_FILTER: Option<&str> = None;
 
 pub fn test_runner(tests: &[&dyn Testable]) -> ! {
     let selected = tests

@@ -1,4 +1,4 @@
-#[cfg(test)]
+#![cfg(test)]
 use crate::{
     allocator::linked_list::LinkedListAllocator,
     log::{self, LogLevel},
@@ -99,6 +99,20 @@ fn log_level_strings_are_stable() {
     assert_eq!(log::level_str(LogLevel::Warn), "WARN");
     assert_eq!(log::level_str(LogLevel::Info), "INFO");
     assert_eq!(log::level_str(LogLevel::Debug), "DEBUG");
+}
+
+#[test_case]
+fn log_current_component_defaults_to_function_name() {
+    assert_eq!(
+        crate::__log_current_component!(),
+        "log_current_component_defaults_to_function_name"
+    );
+}
+
+#[test_case]
+fn log_current_component_ignores_closure_suffix() {
+    let current = (|| crate::__log_current_component!())();
+    assert_eq!(current, "log_current_component_ignores_closure_suffix");
 }
 
 #[test_case]
