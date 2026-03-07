@@ -5,6 +5,7 @@ use core::arch::asm;
 // 下位レベルでの挙動を操作するレジスタ
 const HCR_EL2_API: u64 = 1 << 41;
 const HCR_EL2_RW: u64 = 1 << 31;
+const HCR_EL2_VM: u64 = 1 << 0;
 
 // SPSR_EL2
 // eretの呼び出し元の権限情報を保持する
@@ -46,7 +47,7 @@ pub struct AArch64Hypervisor;
 impl hal::HypervisorControl for AArch64Hypervisor {
     fn setup_hypervisor() {
         // RWはEL1でAArch64として動作させるためのメンバ
-        let hcr_el2 = HCR_EL2_RW | HCR_EL2_API;
+        let hcr_el2 = HCR_EL2_RW | HCR_EL2_API | HCR_EL2_VM;
         unsafe { set_hcr_el2(hcr_el2) };
     }
     fn boot_vm(entry_point: usize) -> ! {

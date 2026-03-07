@@ -7,8 +7,7 @@ use crate::{
         VTCR_EL2_PS_BITS_OFFSET, VTCR_EL2_RES1, VTCR_EL2_SH0_BITS_OFFSET, VTCR_EL2_SL0,
         VTCR_EL2_SL0_BITS_OFFSET, VTCR_EL2_T0SZ, VTCR_EL2_T0SZ_BITS_OFFSET,
         VTCR_EL2_TG0_BITS_OFFSET, VTTBR_BADDR,
-    },
-    log_warn,
+    }, log_warn,
 };
 
 pub const PAGE_SHIFT: usize = 12;
@@ -106,6 +105,7 @@ pub fn init_stage2_translation_table() {
         _ => (16u64, 0i8),
     };
     let number_of_tables = number_of_concatenated_page_tables(t0sz as u8, initial_lookup_level);
+    // 最上位テーブルの領域を確保
     let table = allocate_pages(number_of_tables, 12 + number_of_tables - 1).unwrap();
     for d in unsafe { from_raw_parts_mut(table as *mut Descriptor, number_of_tables * 512) } {
         d.init();
@@ -116,6 +116,8 @@ pub fn init_stage2_translation_table() {
     } else {
         0b10u64
     };
+
+    // 仮想メモリ管理に関する設定を行うレジスタ
     let vtcr_el2: u64 = VTCR_EL2_RES1
         | (ps << VTCR_EL2_PS_BITS_OFFSET)
         | (0 << VTCR_EL2_TG0_BITS_OFFSET)

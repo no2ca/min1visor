@@ -42,6 +42,11 @@ pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
     let elf_address = str_to_usize(elf_addr_str).expect("Failed to convert the address");
     setup_memory(&dtb, dtb_address, elf_address, stack_pointer);
 
+    // ページングのセットアップ
+    paging::init_stage2_translation_table();
+    paging::map_address_stage2(0x40000000, 0x40000000, 0x80000000, true, true)
+        .expect("Failed to map memory");
+
     crate::main();
 }
 
@@ -94,16 +99,11 @@ pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stac
     // ハイパーバイザー自身の領域を確認
     let mut elf_end: usize = 0;
     let elf_header = elf::Elf64Header::new(elf_address).expect("Invalid ELF Header");
-    for (i, p) in elf_header.get_program_headers().enumerate() {
+    for p in elf_header.get_program_headers() {
         if p.get_segment_type() == elf::ELF_PROGRAM_HEADER_SEGMENT_LOAD {
             let start = p.get_physical_address() as usize;
             let size = p.get_memory_size() as usize;
-            crate::println!(
-                "ELF segment ({}) is [{:#X} ~ {:#X}]",
-                i,
-                start,
-                start + size
-            );
+            crate::println!("ELF is [{:#X} ~ {:#X}]", start, start + size);
             elf_end = elf_end.max(start + size);
         }
     }

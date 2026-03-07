@@ -1,6 +1,6 @@
 use core::ptr;
 
-use crate::{ALLOCATOR, paging};
+use crate::{ALLOCATOR, log_debug, paging};
 
 #[derive(Debug)]
 pub struct ListNode {
@@ -37,14 +37,8 @@ impl LinkedListAllocator {
     /// # Safety
     /// initでメモリの内容を書き換えるため利用している領域は除外する必要がある
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
+        log_debug!("ok");
         unsafe { self.add_free_region(heap_start, heap_size) };
-    }
-
-    /// # Safety
-    /// 指定した領域内にListNodeとして表現可能なfree regionを追加する
-    pub unsafe fn insert_free_region(&mut self, addr: usize, size: usize) {
-        let next = self.head.next.take();
-        self.head.next = Self::region_if_representable(addr, size, next);
     }
 
     /// 空きリストの先頭にノードを追加する
@@ -58,29 +52,6 @@ impl LinkedListAllocator {
         unsafe {
             node_ptr.write(new_node);
             self.head.next = Some(&mut *node_ptr);
-        }
-    }
-
-    /// (addr, size)からListNodeとして表現可能なfree regionを1個作る
-    /// 無理ならnextをそのまま返す
-    fn region_if_representable(
-        addr: usize,
-        size: usize,
-        next: Option<&'static mut ListNode>,
-    ) -> Option<&'static mut ListNode> {
-        let aligned_addr = align_up(addr, core::mem::align_of::<ListNode>());
-        let adjusted_size = size.saturating_sub(aligned_addr - addr);
-
-        if adjusted_size >= core::mem::size_of::<ListNode>() {
-            let mut node = ListNode::new(adjusted_size);
-            node.next = next;
-            let node_ptr = aligned_addr as *mut ListNode;
-            unsafe {
-                node_ptr.write(node);
-                Some(&mut *node_ptr)
-            }
-        } else {
-            next
         }
     }
 
@@ -146,46 +117,17 @@ impl LinkedListAllocator {
             self.add_free_region(ptr as usize, size);
         }
     }
-
-    /// 指定した範囲を使用済みとして空きリストから除外する
-    pub fn reserve(&mut self, addr: usize, size: usize) {
-        let reserve_end = addr.checked_add(size).expect("overflow");
-        let mut current = &mut self.head;
-
-        while let Some(region) = current.next.take() {
-            let region_start = region.start_addr();
-            let region_end = region.end_addr();
-            let next = region.next.take();
-
-            if reserve_end <= region_start || region_end <= addr {
-                region.next = next;
-                current.next = Some(region);
-                current = current.next.as_mut().unwrap();
-                continue;
-            }
-
-            current.next = next;
-
-            // 重なっている部分の大きさを前半と後半に分けて考える
-            let prefix_size = addr.saturating_sub(region_start);
-            let suffix_start = reserve_end.max(region_start);
-            let suffix_size = region_end.saturating_sub(suffix_start);
-            let next =
-                Self::region_if_representable(suffix_start, suffix_size, current.next.take());
-            current.next = Self::region_if_representable(region_start, prefix_size, next);
-        }
-    }
 }
 
 fn align_up(addr: usize, align: usize) -> usize {
     addr.next_multiple_of(align)
 }
 
-pub fn allocate_pages(number_of_pages: usize, align: usize) -> Result<usize, ()> {
+pub fn allocate_pages(number_of_pages: usize, align_order: usize) -> Result<usize, ()> {
     let ptr = unsafe {
         ALLOCATOR
             .lock()
-            .alloc(number_of_pages << paging::PAGE_SHIFT, align)
+            .alloc(number_of_pages << paging::PAGE_SHIFT, 1 << align_order)
     };
     if ptr == ptr::null_mut() {
         Err(())
