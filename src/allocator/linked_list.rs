@@ -1,5 +1,7 @@
 use core::ptr;
 
+use crate::{ALLOCATOR, paging};
+
 #[derive(Debug)]
 pub struct ListNode {
     size: usize,
@@ -177,4 +179,17 @@ impl LinkedListAllocator {
 
 fn align_up(addr: usize, align: usize) -> usize {
     addr.next_multiple_of(align)
+}
+
+pub fn allocate_pages(number_of_pages: usize, align: usize) -> Result<usize, ()> {
+    let ptr = unsafe {
+        ALLOCATOR
+            .lock()
+            .alloc(number_of_pages << paging::PAGE_SHIFT, align)
+    };
+    if ptr == ptr::null_mut() {
+        Err(())
+    } else {
+        Ok(ptr as usize)
+    }
 }
