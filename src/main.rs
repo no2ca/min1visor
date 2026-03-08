@@ -26,10 +26,12 @@ mod allocator {
 mod elf;
 mod paging;
 mod exeption;
+mod mmio {
+    pub mod pl011;
+}
 
 use crate::{
-    allocator::linked_list::LinkedListAllocator, hal::HypervisorControl, log::LogLevel,
-    mutex::Mutex,
+    allocator::linked_list::LinkedListAllocator, drivers::pl011, hal::HypervisorControl, log::LogLevel, mutex::Mutex
 };
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
@@ -60,6 +62,11 @@ fn main() -> ! {
 }
 
 extern "C" fn el1_main() {
+    use crate::serial::SerialDevice;
+    let pl011 = drivers::pl011::Pl011::new(0x9000000, 0x1000).unwrap();
+    for c in b"Hello from EL1" {
+        let _ = pl011.putc(*c);
+    }
     loop { unsafe { asm!("wfi") } }
 }
 

@@ -3,7 +3,6 @@
 //!
 use core::arch::global_asm;
 use crate::arch::aarch64::registers::*;
-use crate::log_warn;
 
 #[repr(C)]
 pub struct Registers {
@@ -211,10 +210,7 @@ pub fn setup_exception() {
 }
 
 extern "C" fn synchronous_handler(registers: *mut Registers) {
-    log_warn!("Synchronous Exception!");
-    log_warn!("Fault at {:#X}", crate::arch::aarch64::get_elr_el2());
     let esr_el2 = crate::arch::aarch64::get_esr_el2();
-    log_warn!("ESR_EL2: {:#X}", esr_el2);
     let ec = esr_el2 & ESR_EL2_EC;
     match ec {
         ESR_EL2_EC_DATA_ABORT => data_abort_handler(unsafe { &mut *registers }, esr_el2),
@@ -245,16 +241,21 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
     let address = (((crate::arch::aarch64::get_hpfar_el2() & HPFAR_EL2_FIPA) >> HPFAR_EL2_FIPA_BITS_OFFSET)
         << crate::paging::PAGE_SHIFT)
         | (crate::arch::aarch64::get_far_el2() & ((1 << crate::paging::PAGE_SHIFT) - 1));
-
-    log_warn!(
-        "{:#X} {} {}{}({} Bits)(Value: {:#X})",
-        address,
-        if is_write_access { "<=" } else { "=>" },
-        if is_64bit_register { "X" } else { "W" },
-        register_number,
-        access_width,
-        *register
-    );
+    
+    if (0x9000000..0x9001000).contains(&address) {
+        use crate::mmio::pl011;
+        let offset = (address - 0x9000000) as usize;
+            if is_write_access {
+                let register_value = if is_64bit_register {
+                    *register
+                } else {
+                    *register & (u32::MAX as u64)
+                };
+                pl011::mmio_write(offset, access_width, register_value).expect("Failed to handle MMIO");
+            } else {
+                *register = pl011::mmio_read(offset, access_width).expect("Failed to handle MMIO");
+            }
+    } 
     unsafe { crate::arch::aarch64::advance_elr_el2() };
 }
 
