@@ -1,6 +1,6 @@
 use core::ptr;
 
-use crate::{ALLOCATOR, log_debug, paging};
+use crate::{ALLOCATOR, paging};
 
 #[derive(Debug)]
 pub struct ListNode {
@@ -37,7 +37,6 @@ impl LinkedListAllocator {
     /// # Safety
     /// initでメモリの内容を書き換えるため利用している領域は除外する必要がある
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
-        log_debug!("ok");
         unsafe { self.add_free_region(heap_start, heap_size) };
     }
 

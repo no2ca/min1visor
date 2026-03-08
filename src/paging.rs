@@ -2,12 +2,7 @@ use core::slice::from_raw_parts_mut;
 
 use crate::{
     allocator::linked_list::allocate_pages,
-    arch::aarch64::{
-        ID_AA64MMFR0_EL1_PARANGE, VTCR_EL2_IRGN0_BITS_OFFSET, VTCR_EL2_ORGN0_BITS_OFFSET,
-        VTCR_EL2_PS_BITS_OFFSET, VTCR_EL2_RES1, VTCR_EL2_SH0_BITS_OFFSET, VTCR_EL2_SL0,
-        VTCR_EL2_SL0_BITS_OFFSET, VTCR_EL2_T0SZ, VTCR_EL2_T0SZ_BITS_OFFSET,
-        VTCR_EL2_TG0_BITS_OFFSET, VTTBR_BADDR,
-    }, log_warn,
+    arch::aarch64::registers::*, log_warn,
 };
 
 pub const PAGE_SHIFT: usize = 12;

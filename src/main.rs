@@ -25,6 +25,7 @@ mod allocator {
 }
 mod elf;
 mod paging;
+mod exeption;
 
 use crate::{
     allocator::linked_list::LinkedListAllocator, hal::HypervisorControl, log::LogLevel,
@@ -52,6 +53,8 @@ fn main() -> ! {
         log_info!("CurrentEL: {}", currentel);
         assert_eq!(currentel, 2);
     }
+
+    exeption::setup_exception();
     hal::HypervisorLevel::setup_hypervisor();
     hal::HypervisorLevel::boot_vm(el1_main as *const fn() as usize);
 }
