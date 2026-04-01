@@ -1,16 +1,18 @@
-use crate::hal;
+use crate::{allocator::linked_list::allocate_pages, hal, paging};
 use core::arch::asm;
 
 pub mod registers {
-    // HCR_EL2
-    // 下位レベルでの挙動を操作するレジスタ
+    // HCR_EL2: 下位レベルでの挙動を操作するレジスタ群
     pub const HCR_EL2_API: u64 = 1 << 41;
-    pub const HCR_EL2_RW: u64 = 1 << 31;
-    pub const HCR_EL2_VM: u64 = 1 << 0;
+    pub const HCR_EL2_RW: u64 = 1 << 31; // EL1でAArch64として動作させるためのメンバ
+    pub const HCR_EL2_AMO: u64 = 1 << 5;
+    pub const HCR_EL2_IMO: u64 = 1 << 4;
+    pub const HCR_EL2_FMO: u64 = 1 << 3;
+    pub const HCR_EL2_VM: u64 = 1 << 0; // EL1でステージ2変換を有効化するためのメンバ
 
     // SPSR_EL2
     // eretの呼び出し元の権限情報を保持する
-    pub const SPSR_EL2_M_EL1H: u64 = 0b0101; // 戻り先のレベルとスタックポインタの分離を示す
+    pub const SPSR_EL2_M_EL1H: u64 = 0b0101; // eretの戻り先のレベルとスタックポインタの分離を示す
 
     // VTTBR_EL2
     pub const VTTBR_BADDR: u64 = ((1 << 47) - 1) & !1;
@@ -67,13 +69,17 @@ pub struct AArch64Hypervisor;
 impl hal::HypervisorControl for AArch64Hypervisor {
     fn setup_hypervisor() {
         // RWはEL1でAArch64として動作させるためのメンバ
-        let hcr_el2 = HCR_EL2_RW | HCR_EL2_API | HCR_EL2_VM;
+        let hcr_el2 = HCR_EL2_RW | HCR_EL2_API | HCR_EL2_AMO | HCR_EL2_IMO | HCR_EL2_FMO | HCR_EL2_VM;
         unsafe { set_hcr_el2(hcr_el2) };
     }
     fn boot_vm(entry_point: usize) -> ! {
         unsafe {
             set_spsr_el2(SPSR_EL2_M_EL1H);
             set_elr_el2(entry_point as u64);
+            // EL1 用のスタックポインタを設定
+            crate::arch::aarch64::set_sp_el1(
+                (allocate_pages(1, paging::PAGE_SHIFT).unwrap() + paging::PAGE_SIZE) as u64,
+            );
             eret(0, 0, 0, 0);
         }
     }
@@ -213,3 +219,50 @@ pub unsafe fn set_sp_el1(sp_el1: u64) {
     unsafe { asm!("msr sp_el1, {}", in(reg) sp_el1) };
 }
 
+pub const fn mpidr_to_affinity(mpidr: u64) -> u64 {
+    mpidr & !((1 << 31) | (1 << 30))
+}
+
+pub fn get_mpidr_el1() -> u64 {
+    let mpidr_el1: u64;
+    unsafe { asm!("mrs {}, mpidr_el1", out(reg) mpidr_el1) };
+    mpidr_el1
+}
+
+/// CPUコアのAffinityを取り出す
+pub fn get_packed_affinity() -> u32 {
+    let mpidr = mpidr_to_affinity(get_mpidr_el1());
+    ((mpidr & ((1 << 24) - 1)) | ((mpidr & (0xff << 32)) >> (32 - 24))) as u32
+}
+
+pub fn get_icc_sre_el2() -> u64 {
+    let icc_sre_el2: u64;
+    unsafe { asm!("mrs {}, icc_sre_el2", out(reg) icc_sre_el2) };
+    icc_sre_el2
+}
+
+pub unsafe fn set_icc_sre_el2(icc_sre_el2: u64) {
+    unsafe { asm!("msr icc_sre_el2, {}", in(reg) icc_sre_el2) };
+}
+
+pub unsafe fn set_icc_igrpen1_el1(icc_igrpen1_el1: u64) {
+    unsafe { asm!("msr icc_igrpen1_el1, {}", in(reg) icc_igrpen1_el1) };
+}
+
+pub unsafe fn set_icc_pmr_el1(icc_pmr_el1: u64) {
+    unsafe { asm!("msr icc_pmr_el1, {}", in(reg) icc_pmr_el1) };
+}
+
+pub unsafe fn set_icc_bpr1_el1(icc_bpr1_el1: u64) {
+    unsafe { asm!("msr icc_bpr1_el1, {}", in(reg) icc_bpr1_el1) };
+}
+
+pub unsafe fn set_icc_eoir1_el1(icc_eoir1_el1: u64) {
+    unsafe { asm!("msr icc_eoir1_el1, {}", in(reg) icc_eoir1_el1) };
+}
+
+pub fn get_icc_iar1_el1() -> u64 {
+    let icc_iar1_el1: u64;
+    unsafe { asm!("mrs {}, icc_iar1_el1", out(reg) icc_iar1_el1) };
+    icc_iar1_el1
+}

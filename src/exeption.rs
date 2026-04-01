@@ -1,8 +1,8 @@
 //!
 //! 割り込み制御
 //!
+use crate::{arch::aarch64::registers::*, drivers::gicv3::GicRedistributor, log_info};
 use core::arch::global_asm;
-use crate::arch::aarch64::registers::*;
 
 #[repr(C)]
 pub struct Registers {
@@ -238,25 +238,30 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
     let register: &mut u64 =
         &mut unsafe { &mut *(registers as *mut _ as usize as *mut [u64; 32]) }[register_number];
 
-    let address = (((crate::arch::aarch64::get_hpfar_el2() & HPFAR_EL2_FIPA) >> HPFAR_EL2_FIPA_BITS_OFFSET)
+    let address = (((crate::arch::aarch64::get_hpfar_el2() & HPFAR_EL2_FIPA)
+        >> HPFAR_EL2_FIPA_BITS_OFFSET)
         << crate::paging::PAGE_SHIFT)
         | (crate::arch::aarch64::get_far_el2() & ((1 << crate::paging::PAGE_SHIFT) - 1));
-    
+
     if (0x9000000..0x9001000).contains(&address) {
         use crate::mmio::pl011;
         let offset = (address - 0x9000000) as usize;
-            if is_write_access {
-                let register_value = if is_64bit_register {
-                    *register
-                } else {
-                    *register & (u32::MAX as u64)
-                };
-                pl011::mmio_write(offset, access_width, register_value).expect("Failed to handle MMIO");
+        if is_write_access {
+            let register_value = if is_64bit_register {
+                *register
             } else {
-                *register = pl011::mmio_read(offset, access_width).expect("Failed to handle MMIO");
-            }
-    } 
+                *register & (u32::MAX as u64)
+            };
+            pl011::mmio_write(offset, access_width, register_value).expect("Failed to handle MMIO");
+        } else {
+            *register = pl011::mmio_read(offset, access_width).expect("Failed to handle MMIO");
+        }
+    }
     unsafe { crate::arch::aarch64::advance_elr_el2() };
 }
 
-extern "C" fn irq_handler() {}
+extern "C" fn irq_handler() {
+    let (interrupt_number, group) = GicRedistributor::get_acknowledge();
+    log_info!("Interrupt Number: {interrupt_number}");
+    GicRedistributor::send_eoi(interrupt_number, group);
+}

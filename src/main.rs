@@ -8,6 +8,7 @@ mod dtb;
 mod start;
 mod drivers {
     pub mod pl011;
+    pub mod gicv3;
 }
 mod log;
 mod mutex;
@@ -24,14 +25,15 @@ mod allocator {
     pub mod linked_list;
 }
 mod elf;
-mod paging;
 mod exeption;
+mod paging;
 mod mmio {
     pub mod pl011;
 }
 
 use crate::{
-    allocator::linked_list::LinkedListAllocator, drivers::pl011, hal::HypervisorControl, log::LogLevel, mutex::Mutex
+    allocator::linked_list::LinkedListAllocator, hal::HypervisorControl, log::LogLevel,
+    mutex::Mutex,
 };
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
@@ -67,7 +69,9 @@ extern "C" fn el1_main() {
     for c in b"Hello from EL1" {
         let _ = pl011.putc(*c);
     }
-    loop { unsafe { asm!("wfi") } }
+    loop {
+        unsafe { asm!("wfi") }
+    }
 }
 
 #[cfg(not(test))]

@@ -1,9 +1,6 @@
 use core::slice::from_raw_parts_mut;
 
-use crate::{
-    allocator::linked_list::allocate_pages,
-    arch::aarch64::registers::*, log_warn,
-};
+use crate::{allocator::linked_list::allocate_pages, arch::aarch64::registers::*, log_warn};
 
 pub const PAGE_SHIFT: usize = 12;
 pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;

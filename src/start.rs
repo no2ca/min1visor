@@ -12,7 +12,7 @@
 //!
 use core::{ffi::CStr, slice};
 
-use crate::{ALLOCATOR, PL011_DEVICE, drivers, dtb, elf, paging, serial};
+use crate::{ALLOCATOR, PL011_DEVICE, drivers::{self, gicv3}, dtb, elf, paging, serial};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
@@ -46,6 +46,10 @@ pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
     paging::init_stage2_translation_table();
     paging::map_address_stage2(0x40000000, 0x40000000, 0x80000000, true, true)
         .expect("Failed to map memory");
+
+    crate::exeption::setup_exception();
+    let distributor = init_gic_distributor(&dtb);
+    let redistributor = init_gic_redistributor(&dtb);
 
     crate::main();
 }
@@ -141,4 +145,23 @@ fn str_to_usize(s: &str) -> Option<usize> {
         }
     }
     usize::from_str_radix(start?, radix).ok()
+}
+
+fn init_gic_distributor(dtb: &dtb::Dtb) -> gicv3::GicDistributor {
+    let gic_node = dtb.search_node_by_compatible(b"arm,gic-v3", None).unwrap();
+    let (base_address, size) = dtb.read_reg_property(&gic_node, 0).unwrap();
+    crate::println!("GIC Distributor's Base Address: {:#X}", base_address);
+    let gic_distributor = gicv3::GicDistributor::new(base_address, size).unwrap();
+    gic_distributor.init();
+    gic_distributor
+}
+
+
+fn init_gic_redistributor(dtb: &dtb::Dtb) -> gicv3::GicRedistributor {
+    let gic_node = dtb.search_node_by_compatible(b"arm,gic-v3", None).unwrap();
+    let (base_address, size) = dtb.read_reg_property(&gic_node, 1).unwrap();
+    crate::println!("GIC Redistributor's Base Address: {:#X}", base_address);
+    let gic_redistributor = gicv3::get_self_redistributor(base_address, size).unwrap();
+    gic_redistributor.init();
+    gic_redistributor
 }
