@@ -15,6 +15,7 @@ pub struct Mutex<T: ?Sized> {
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
     lock: &'a AtomicBool,
     data: &'a mut T,
+    state: u64,
     // 獲得した値がスレッド間で共有されないようにする
     // 否定トレイトが完全実装されたら以下を使用できる
     // Ensure that acquired values are not shared between threads
@@ -47,6 +48,7 @@ impl<T: ?Sized> Mutex<T> {
                 return MutexGuard {
                     lock: &self.lock,
                     data: unsafe { &mut *self.data.get() },
+                    state,
                     _forbid_send: PhantomData,
                 };
             }
@@ -75,5 +77,6 @@ impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
 impl<T: ?Sized> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.store(false, Ordering::Release);
+        unsafe { hal::Interrupts::restore_interrupts(self.state) };
     }
 }
