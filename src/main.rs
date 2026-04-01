@@ -7,8 +7,8 @@
 mod dtb;
 mod start;
 mod drivers {
-    pub mod pl011;
     pub mod gicv3;
+    pub mod pl011;
 }
 mod log;
 mod mutex;
@@ -65,8 +65,8 @@ fn main() -> ! {
 
 extern "C" fn el1_main() {
     use crate::serial::SerialDevice;
-    let pl011 = drivers::pl011::Pl011::new(0x9000000, 0x1000).unwrap();
-    for c in b"Hello from EL1" {
+    let pl011 = drivers::pl011::Pl011::new(0x9000000, 0x1000, 0).unwrap();
+    for c in b"Hello from EL1\n" {
         let _ = pl011.putc(*c);
     }
     loop {

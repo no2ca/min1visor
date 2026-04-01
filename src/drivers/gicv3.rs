@@ -1,5 +1,9 @@
 use crate::log_warn;
 
+pub const DTB_GIC_LEVEL: u32 = 4;
+pub const DTB_GIC_SPI: u32 = 0;
+pub const GIC_SPI_BASE: u32 = 32;
+
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum GicGroup {
     NonSecureGroup1,
@@ -41,6 +45,7 @@ impl GicDistributor {
         // Affinity Routingを有効化する
         // Affinity Routingは割り込みを発生させるかをMPIDR_EL1というレジスタの値で設定できるようになる
         self.write_register(Self::GICD_CTLR, Self::GICD_CTLR_ARE);
+        // 反映待ち
         self.wait_rwp();
         // 割り込みをGroup 1 (Non Secure World) で受け取るようにする
         self.write_register(
@@ -48,7 +53,7 @@ impl GicDistributor {
             Self::GICD_CTLR_ARE | Self::GICD_CTLR_ENABLE_GRP1NS,
         );
     }
-    
+
     /// 書き込んだ内容がハードウェアに反映されるのを待つ
     fn wait_rwp(&self) {
         while (self.read_register(Self::GICD_CTLR) & Self::GICD_CTLR_RWP) != 0 {
@@ -95,7 +100,19 @@ impl GicDistributor {
                 | (data << register_offset),
         );
     }
-    
+
+    pub fn set_enable(&self, int_id: u32, enable: bool) {
+        let register_index = ((int_id / u32::BITS) as usize) * size_of::<u32>();
+        let register_offset = int_id & (u32::BITS - 1);
+        let register = if enable {
+            Self::GICD_ISENABLER
+        } else {
+            Self::GICD_ICENABLER
+        };
+
+        self.write_register(register + register_index, 1 << register_offset);
+    }
+
     pub fn set_pending(&self, int_id: u32, pending: bool) {
         let register_index = ((int_id / u32::BITS) as usize) * size_of::<u32>();
         let register_offset = int_id & (u32::BITS - 1);
@@ -170,7 +187,11 @@ impl GicRedistributor {
     }
 
     pub fn init(&self) {
-        unsafe { crate::arch::aarch64::set_icc_sre_el2(crate::arch::aarch64::get_icc_sre_el2() | Self::ICC_SRE_SRE) };
+        unsafe {
+            crate::arch::aarch64::set_icc_sre_el2(
+                crate::arch::aarch64::get_icc_sre_el2() | Self::ICC_SRE_SRE,
+            )
+        };
         if (crate::arch::aarch64::get_icc_sre_el2() & Self::ICC_SRE_SRE) == 0 {
             panic!("GICv3 System Registers is disabled.");
         }
@@ -248,7 +269,10 @@ impl GicRedistributor {
     }
 
     pub fn get_acknowledge() -> (u32, GicGroup) {
-        (crate::arch::aarch64::get_icc_iar1_el1() as u32, GicGroup::NonSecureGroup1)
+        (
+            crate::arch::aarch64::get_icc_iar1_el1() as u32,
+            GicGroup::NonSecureGroup1,
+        )
     }
 
     pub fn send_eoi(int_id: u32, group: GicGroup) {

@@ -1,7 +1,10 @@
 //!
 //! 割り込み制御
 //!
-use crate::{arch::aarch64::registers::*, drivers::gicv3::GicRedistributor, log_info};
+use crate::{
+    PL011_DEVICE, arch::aarch64::registers::*, drivers::gicv3::GicRedistributor, log_debug,
+    log_info, serial::SerialDevice,
+};
 use core::arch::global_asm;
 
 #[repr(C)]
@@ -261,7 +264,16 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 }
 
 extern "C" fn irq_handler() {
+    // 割り込み番号を取得
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
     log_info!("Interrupt Number: {interrupt_number}");
+    let pl011_int_id = PL011_DEVICE.lock().interrupt_number;
+    if interrupt_number == pl011_int_id {
+        if interrupt_number == pl011_int_id {
+            let c = PL011_DEVICE.lock().getc().unwrap().unwrap();
+            crate::println!("PL011: {}", c as char);
+        }
+    }
+    // 割り込み終了を通知
     GicRedistributor::send_eoi(interrupt_number, group);
 }

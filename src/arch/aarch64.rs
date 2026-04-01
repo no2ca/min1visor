@@ -69,7 +69,8 @@ pub struct AArch64Hypervisor;
 impl hal::HypervisorControl for AArch64Hypervisor {
     fn setup_hypervisor() {
         // RWはEL1でAArch64として動作させるためのメンバ
-        let hcr_el2 = HCR_EL2_RW | HCR_EL2_API | HCR_EL2_AMO | HCR_EL2_IMO | HCR_EL2_FMO | HCR_EL2_VM;
+        let hcr_el2 =
+            HCR_EL2_RW | HCR_EL2_API | HCR_EL2_AMO | HCR_EL2_IMO | HCR_EL2_FMO | HCR_EL2_VM;
         unsafe { set_hcr_el2(hcr_el2) };
     }
     fn boot_vm(entry_point: usize) -> ! {
@@ -223,6 +224,7 @@ pub const fn mpidr_to_affinity(mpidr: u64) -> u64 {
     mpidr & !((1 << 31) | (1 << 30))
 }
 
+/// el1におけるCPUのAffinityの情報が入ったレジスタを返す
 pub fn get_mpidr_el1() -> u64 {
     let mpidr_el1: u64;
     unsafe { asm!("mrs {}, mpidr_el1", out(reg) mpidr_el1) };

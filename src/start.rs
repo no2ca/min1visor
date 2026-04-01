@@ -12,7 +12,11 @@
 //!
 use core::{ffi::CStr, slice};
 
-use crate::{ALLOCATOR, PL011_DEVICE, drivers::{self, gicv3}, dtb, elf, paging, serial};
+use crate::{
+    ALLOCATOR, PL011_DEVICE,
+    drivers::{self, gicv3, pl011},
+    dtb, elf, paging, serial,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
@@ -47,9 +51,12 @@ pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
     paging::map_address_stage2(0x40000000, 0x40000000, 0x80000000, true, true)
         .expect("Failed to map memory");
 
+    // 例外ハンドラのセットアップ
     crate::exeption::setup_exception();
     let distributor = init_gic_distributor(&dtb);
     let redistributor = init_gic_redistributor(&dtb);
+
+    enable_serial_port_interrupt(&*PL011_DEVICE.lock(), &distributor);
 
     crate::main();
 }
@@ -75,7 +82,18 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     let Some((pl011_base, pl011_range)) = dtb.read_reg_property(&pl011, 0) else {
         return Err(6);
     };
-    let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range) else {
+
+    let interrupts =
+        dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
+    let mut interrupt_number = 0;
+    // 割り込みのタイプとトリガがあっているか検証
+    if u32::from_be(interrupts[0]) == gicv3::DTB_GIC_SPI
+        && u32::from_be(interrupts[2]) == gicv3::DTB_GIC_LEVEL
+    {
+        interrupt_number = gicv3::GIC_SPI_BASE + u32::from_be(interrupts[1]);
+    }
+
+    let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number) else {
         return Err(7);
     };
     *PL011_DEVICE.lock() = pl011;
@@ -156,7 +174,6 @@ fn init_gic_distributor(dtb: &dtb::Dtb) -> gicv3::GicDistributor {
     gic_distributor
 }
 
-
 fn init_gic_redistributor(dtb: &dtb::Dtb) -> gicv3::GicRedistributor {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-v3", None).unwrap();
     let (base_address, size) = dtb.read_reg_property(&gic_node, 1).unwrap();
@@ -164,4 +181,22 @@ fn init_gic_redistributor(dtb: &dtb::Dtb) -> gicv3::GicRedistributor {
     let gic_redistributor = gicv3::get_self_redistributor(base_address, size).unwrap();
     gic_redistributor.init();
     gic_redistributor
+}
+
+fn enable_serial_port_interrupt(
+    pl011: &drivers::pl011::Pl011,
+    distributor: &gicv3::GicDistributor,
+) {
+    let int_id = pl011.interrupt_number;
+    if int_id == 0 {
+        crate::println!("PL011 does not support interrupt.");
+        return;
+    }
+    distributor.set_group(int_id, gicv3::GicGroup::NonSecureGroup1);
+    distributor.set_priority(int_id, 0x00);
+    distributor.set_routing(int_id, false, crate::arch::aarch64::get_mpidr_el1());
+    distributor.set_trigger_mode(int_id, true);
+    distributor.set_pending(int_id, false);
+    distributor.set_enable(int_id, true);
+    pl011.enable_interrupt();
 }
