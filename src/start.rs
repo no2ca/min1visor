@@ -14,7 +14,7 @@ use core::{ffi::CStr, slice};
 
 use crate::{
     ALLOCATOR, PL011_DEVICE,
-    drivers::{self, gicv3, pl011},
+    drivers::{self, gicv3, virtio_blk},
     dtb, elf, paging, serial,
 };
 
@@ -53,10 +53,16 @@ pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
 
     // 例外ハンドラのセットアップ
     crate::exeption::setup_exception();
+
+    // 割り込みコントローラのセットアップ
     let distributor = init_gic_distributor(&dtb);
     let redistributor = init_gic_redistributor(&dtb);
 
+    // PL011の割り込みのセットアップ
     enable_serial_port_interrupt(&*PL011_DEVICE.lock(), &distributor);
+    
+    // virtio_blk (legacy) のセットアップ
+    let virtioblk = init_virtio_blk(&dtb).unwrap();
 
     crate::main();
 }
@@ -199,4 +205,24 @@ fn enable_serial_port_interrupt(
     distributor.set_pending(int_id, false);
     distributor.set_enable(int_id, true);
     pl011.enable_interrupt();
+}
+
+fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
+    let mut virtio = None;
+    loop {
+        virtio = dtb.search_node_by_compatible(b"virtio,mmio", virtio.as_ref());
+        match &virtio {
+            Some(virtio) => {
+                if dtb.is_node_operational(virtio) {
+                    let (base_address, _) = dtb.read_reg_property(virtio, 0).unwrap();
+                    if let Ok(blk) = virtio_blk::VirtioBlk::new(base_address) {
+                        return Some(blk);
+                    }
+                }
+            }
+            None => {
+                return None;
+            }
+        }
+    }
 }

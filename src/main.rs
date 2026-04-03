@@ -9,6 +9,8 @@ mod start;
 mod drivers {
     pub mod gicv3;
     pub mod pl011;
+    pub mod virtio;
+    pub mod virtio_blk;
 }
 mod log;
 mod mutex;
