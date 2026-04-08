@@ -46,21 +46,12 @@ static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::P
 static ALLOCATOR: Mutex<LinkedListAllocator> = Mutex::new(LinkedListAllocator::new());
 
 /// start.rsの_startから呼ばれる
-/// This is called from _start in start.rs
 fn main() -> ! {
     log_info!("Hello from main!");
 
     #[cfg(test)]
     test_main();
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        let currentel = arch::aarch64::get_currentel() >> 2;
-        log_info!("CurrentEL: {}", currentel);
-        assert_eq!(currentel, 2);
-    }
-
-    hal::HypervisorLevel::setup_hypervisor();
     hal::HypervisorLevel::boot_vm(el1_main as *const fn() as usize);
 }
 

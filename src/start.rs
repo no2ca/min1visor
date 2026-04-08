@@ -13,9 +13,7 @@
 use core::{ffi::CStr, slice};
 
 use crate::{
-    ALLOCATOR, PL011_DEVICE,
-    drivers::{self, gicv3, virtio_blk},
-    dtb, elf, paging, serial,
+    ALLOCATOR, PL011_DEVICE, drivers::{self, gicv3, virtio_blk}, dtb, elf, hal::HypervisorControl, paging, serial
 };
 
 #[unsafe(no_mangle)]
@@ -70,6 +68,16 @@ pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
     crate::println!("{:#X?}", buffer);
     let boot_signature = [buffer[510], buffer[511]];
     assert_eq!(u16::from_le_bytes(boot_signature), 0xAA55); /* BOOT Signature */
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let currentel = crate::arch::aarch64::get_currentel() >> 2;
+        crate::log_info!("CurrentEL: {}", currentel);
+        assert_eq!(currentel, 2);
+    }
+
+    // hypervisorモードのセットアップ
+    crate::hal::HypervisorLevel::setup_hypervisor();
 
     crate::main();
 }
