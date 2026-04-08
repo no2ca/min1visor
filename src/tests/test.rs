@@ -1,9 +1,23 @@
 #![cfg(test)]
 use crate::{
     allocator::linked_list::LinkedListAllocator,
+    drivers::{
+        gicv3::GicDistributor,
+        pl011::Pl011,
+        virtio::{
+            NUMBER_OF_DESCRIPTORS, NUMBER_OF_PAGES_QUEUE, VIRTIO_MMIO_DEVICE_ID,
+            VIRTIO_MMIO_MAGIC, VIRTIO_MMIO_MAGIC_VALUE, VIRTIO_MMIO_QUEUE_NOTIFY,
+            VIRTIO_MMIO_STATUS, VIRTIO_PAGE_SIZE, VirtQueueAvail, VirtQueueDesc, VirtQueueUsed,
+        },
+        virtio_blk::{
+            VIRTIO_BLK_S_IOERR, VIRTIO_BLK_S_OK, VIRTIO_BLK_TYPE_IN, VIRTIO_BLK_TYPE_OUT,
+            VirtioBlkReq,
+        },
+    },
     log::{self, LogLevel},
     mutex::Mutex,
 };
+use core::mem::{offset_of, size_of};
 
 const TEST_HEAP_START: usize = 0x5000_0000;
 const TEST_HEAP_SIZE: usize = 0x1000_0000;
@@ -156,4 +170,57 @@ fn linked_list_dealloc_makes_region_reusable() {
 
     let reused = unsafe { allocator.alloc(0x1000, 0x1000) };
     assert_eq!(reused as usize, TEST_HEAP_START);
+}
+
+#[test_case]
+fn virtio_mmio_register_offsets_match_expected_values() {
+    assert_eq!(VIRTIO_MMIO_MAGIC, 0x000);
+    assert_eq!(VIRTIO_MMIO_DEVICE_ID, 0x008);
+    assert_eq!(VIRTIO_MMIO_STATUS, 0x070);
+    assert_eq!(VIRTIO_MMIO_QUEUE_NOTIFY, 0x050);
+    assert_eq!(VIRTIO_MMIO_MAGIC_VALUE, 0x7472_6976);
+}
+
+#[test_case]
+fn virtio_queue_layout_fits_in_reserved_pages() {
+    let descriptor_table = 0usize;
+    let available_ring = descriptor_table + size_of::<VirtQueueDesc>() * NUMBER_OF_DESCRIPTORS;
+    let used_ring =
+        ((available_ring + size_of::<VirtQueueAvail>() - 1) & !(VIRTIO_PAGE_SIZE - 1))
+            + VIRTIO_PAGE_SIZE;
+    let queue_bytes = NUMBER_OF_PAGES_QUEUE * VIRTIO_PAGE_SIZE;
+
+    assert_eq!(used_ring % VIRTIO_PAGE_SIZE, 0);
+    assert!(used_ring > available_ring);
+    assert!(used_ring + size_of::<VirtQueueUsed>() <= queue_bytes);
+}
+
+#[test_case]
+fn virtio_blk_request_layout_is_stable() {
+    assert_eq!(size_of::<VirtioBlkReq>(), 16);
+    assert_eq!(offset_of!(VirtioBlkReq, req_type), 0);
+    assert_eq!(offset_of!(VirtioBlkReq, reserved), 4);
+    assert_eq!(offset_of!(VirtioBlkReq, sector), 8);
+}
+
+#[test_case]
+fn virtio_blk_constants_follow_expected_protocol_values() {
+    assert_eq!(VIRTIO_BLK_TYPE_IN, 0);
+    assert_eq!(VIRTIO_BLK_TYPE_OUT, 1);
+    assert_eq!(VIRTIO_BLK_S_OK, 0);
+    assert_eq!(VIRTIO_BLK_S_IOERR, 1);
+}
+
+#[test_case]
+fn pl011_new_rejects_too_small_range_and_accepts_valid_range() {
+    assert!(Pl011::new(0x0900_0000, 0x0FFF, 33).is_err());
+
+    let pl011 = Pl011::new(0x0900_0000, 0x1000, 33).expect("pl011 init should succeed");
+    assert_eq!(pl011.interrupt_number, 33);
+}
+
+#[test_case]
+fn gic_distributor_new_requires_exact_mmio_size() {
+    assert!(GicDistributor::new(0x0800_0000, 0xFFFF).is_err());
+    assert!(GicDistributor::new(0x0800_0000, 0x10000).is_ok());
 }
