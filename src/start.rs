@@ -62,7 +62,14 @@ pub extern "C" fn _start(argc: usize, argv: *const *const u8) -> usize {
     enable_serial_port_interrupt(&*PL011_DEVICE.lock(), &distributor);
     
     // virtio_blk (legacy) のセットアップ
-    let virtioblk = init_virtio_blk(&dtb).unwrap();
+    let mut virtioblk = init_virtio_blk(&dtb).unwrap();
+    let mut buffer: [u8; 512] = [0; 512];
+    virtioblk
+        .read(&mut buffer as *mut _ as usize, 0, 512)
+        .expect("Failed to read first 512bytes");
+    crate::println!("{:#X?}", buffer);
+    let boot_signature = [buffer[510], buffer[511]];
+    assert_eq!(u16::from_le_bytes(boot_signature), 0xAA55); /* BOOT Signature */
 
     crate::main();
 }
