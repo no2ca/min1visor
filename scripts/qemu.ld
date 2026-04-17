@@ -1,5 +1,5 @@
 OUTPUT_FORMAT(elf64-aarch64)
-ENTRY(_start)
+ENTRY(main)
 
 __ALIGN_SIZE = 0x1000;
 __RAM_BASE   = 0x40400000;
