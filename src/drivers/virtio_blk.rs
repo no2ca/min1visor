@@ -99,8 +99,9 @@ impl VirtioBlk {
             VIRTIO_MMIO_QUEUE_NUM,
             NUMBER_OF_DESCRIPTORS as u32,
         );
-        let queue = crate::allocator::linked_list::allocate_pages(NUMBER_OF_PAGES_QUEUE, VIRTIO_PAGE_SHIFT)
-            .expect("Failed to allocate virtio queue");
+        let queue =
+            crate::allocator::linked_list::allocate_pages(NUMBER_OF_PAGES_QUEUE, VIRTIO_PAGE_SHIFT)
+                .expect("Failed to allocate virtio queue");
         // 確保した領域をゼロクリアする
         unsafe {
             core::ptr::write_bytes(
@@ -177,7 +178,8 @@ impl VirtioBlk {
         if (block_address & ((1 << 9) - 1)) != 0 || (length & ((1 << 9) - 1) != 0) {
             log_warn!(
                 "Block Address({:#X}) and Length({:#X}) must be 512Byte-Aligned.",
-                block_address, length
+                block_address,
+                length
             );
             return Err(());
         }

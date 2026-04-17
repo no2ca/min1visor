@@ -5,9 +5,9 @@ use crate::{
         gicv3::GicDistributor,
         pl011::Pl011,
         virtio::{
-            NUMBER_OF_DESCRIPTORS, NUMBER_OF_PAGES_QUEUE, VIRTIO_MMIO_DEVICE_ID,
-            VIRTIO_MMIO_MAGIC, VIRTIO_MMIO_MAGIC_VALUE, VIRTIO_MMIO_QUEUE_NOTIFY,
-            VIRTIO_MMIO_STATUS, VIRTIO_PAGE_SIZE, VirtQueueAvail, VirtQueueDesc, VirtQueueUsed,
+            NUMBER_OF_DESCRIPTORS, NUMBER_OF_PAGES_QUEUE, VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_MAGIC,
+            VIRTIO_MMIO_MAGIC_VALUE, VIRTIO_MMIO_QUEUE_NOTIFY, VIRTIO_MMIO_STATUS,
+            VIRTIO_PAGE_SIZE, VirtQueueAvail, VirtQueueDesc, VirtQueueUsed,
         },
         virtio_blk::{
             VIRTIO_BLK_S_IOERR, VIRTIO_BLK_S_OK, VIRTIO_BLK_TYPE_IN, VIRTIO_BLK_TYPE_OUT,
@@ -185,9 +185,8 @@ fn virtio_mmio_register_offsets_match_expected_values() {
 fn virtio_queue_layout_fits_in_reserved_pages() {
     let descriptor_table = 0usize;
     let available_ring = descriptor_table + size_of::<VirtQueueDesc>() * NUMBER_OF_DESCRIPTORS;
-    let used_ring =
-        ((available_ring + size_of::<VirtQueueAvail>() - 1) & !(VIRTIO_PAGE_SIZE - 1))
-            + VIRTIO_PAGE_SIZE;
+    let used_ring = ((available_ring + size_of::<VirtQueueAvail>() - 1) & !(VIRTIO_PAGE_SIZE - 1))
+        + VIRTIO_PAGE_SIZE;
     let queue_bytes = NUMBER_OF_PAGES_QUEUE * VIRTIO_PAGE_SIZE;
 
     assert_eq!(used_ring % VIRTIO_PAGE_SIZE, 0);

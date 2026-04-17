@@ -42,20 +42,30 @@ mod paging;
 mod mmio {
     pub mod pl011;
 }
+mod fat32;
 
+use crate::drivers::{gicv3, virtio_blk};
 use crate::{
     allocator::linked_list::LinkedListAllocator, hal::HypervisorControl, log::LogLevel,
     mutex::Mutex,
 };
-use core::{ffi::CStr, slice};
-use crate::drivers::{gicv3, virtio_blk};
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
 use core::{arch::asm, sync::atomic::AtomicU8};
+use core::{ffi::CStr, slice};
 
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Debug as u8);
 static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::invalid());
 static ALLOCATOR: Mutex<LinkedListAllocator> = Mutex::new(LinkedListAllocator::new());
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    println!("{}", info);
+    loop {
+        core::hint::spin_loop();
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
@@ -99,16 +109,19 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
     // PL011の割り込みのセットアップ
     enable_serial_port_interrupt(&*PL011_DEVICE.lock(), &distributor);
-    
+
     // virtio_blk (legacy) のセットアップ
     let mut virtioblk = init_virtio_blk(&dtb).unwrap();
-    let mut buffer: [u8; 512] = [0; 512];
-    virtioblk
-        .read(&mut buffer as *mut _ as usize, 0, 512)
-        .expect("Failed to read first 512bytes");
-    crate::println!("{:#X?}", buffer);
-    let boot_signature = [buffer[510], buffer[511]];
-    assert_eq!(u16::from_le_bytes(boot_signature), 0xAA55); /* BOOT Signature */
+    // let mut buffer: [u8; 512] = [0; 512];
+    // virtioblk
+    //     .read(&mut buffer as *mut _ as usize, 0, 512)
+    //     .expect("Failed to read first 512bytes");
+    // crate::println!("{:#X?}", buffer);
+    // let boot_signature = [buffer[510], buffer[511]];
+    // assert_eq!(u16::from_le_bytes(boot_signature), 0xAA55); /* BOOT Signature */
+
+    // fat32のセットアップ
+    init_fat32(&mut virtioblk);
 
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
@@ -297,12 +310,47 @@ fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
     }
 }
 
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
-    loop {
-        core::hint::spin_loop();
+pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) {
+    #[derive(Debug)]
+    #[repr(C)]
+    struct PartitionTableEntry {
+        boot_flag: u8,
+        first_sector: [u8; 3],
+        partition_type: u8,
+        last_sector: [u8; 3],
+        first_sector_lba: u32,
+        number_of_sectors: u32,
     }
+    const PARTITION_TABLE_BASE: usize = 0x1BE;
+    // Boot Signatureの確認
+    let mut mbr: [u8; 512] = [0; 512];
+    blk.read(&mut mbr as *mut _ as usize, 0, 512)
+        .expect("Failed to read first 512 bytes");
+    assert_eq!(u16::from_le_bytes([mbr[510], mbr[511]]), 0xAA55);
+
+    // パーティションテーブルの解析
+    let ptr = mbr[PARTITION_TABLE_BASE..].as_ptr() as *const [PartitionTableEntry; 4];
+    let partition_table = unsafe {
+        core::ptr::read_unaligned(ptr)
+        // &*(&mbr[PARTITION_TABLE_BASE] as *const _ as usize as *const [PartitionTableEntry; 4])
+    };
+    let mut fat32 = Err(());
+    for entry in partition_table {
+        log_debug!("{:?}", entry);
+        if entry.partition_type == 0x0C {
+            log_debug!("ok");
+            fat32 = fat32::Fat32::new(blk, entry.first_sector_lba as usize, 512);
+            break;
+        }
+    }
+
+    // ファイルのリストアップとmin1visor.elfの読み込み
+    let fat32 = fat32.expect("The FAT32 Partition is not found!");
+    // fat32.list_files();
+    // let file_info = fat32.search_file("MIN1VISOR.ELF").unwrap();
+    // let elf_data: [u8; 512] = [0u8; 512];
+    // fat32
+    //     .read(&file_info, blk, &elf_data as *const _ as usize, 0, 512)
+    //     .expect("Failed to read");
+    // println!("{:#X?}", elf_data);
 }
