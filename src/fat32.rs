@@ -1,7 +1,7 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::drivers::virtio_blk::VirtioBlk;
-use crate::{log_debug, log_info, log_warn};
 use crate::paging::PAGE_SHIFT;
+use crate::{log_debug, log_info, log_warn};
 
 const FAT32_SIGNATURE: [u8; 8] = [b'F', b'A', b'T', b'3', b'2', b' ', b' ', b' '];
 
@@ -134,7 +134,15 @@ impl Fat32 {
         };
 
         let root_sector = fat32.cluster_to_sector(root_cluster);
-        if fat32.read_sectors(blk, root_directory_list, root_sector, sectors_per_cluster as u32).is_err() {
+        if fat32
+            .read_sectors(
+                blk,
+                root_directory_list,
+                root_sector,
+                sectors_per_cluster as u32,
+            )
+            .is_err()
+        {
             // TODO: free_pages()
             return Err(());
         }
@@ -160,7 +168,7 @@ impl Fat32 {
         let length = (sectors as u64) * (self.bytes_per_sector as u64);
         blk.read(buffer, block_address, length)
     }
-    
+
     fn get_file_name<'a>(entry: &DirectoryEntry, buffer: &'a mut [u8; 12]) -> Option<&'a mut str> {
         if entry.name[0] == 0x05 {
             // 0xE5は無効なファイルとして扱われる
@@ -193,9 +201,10 @@ impl Fat32 {
         }
         core::str::from_utf8_mut(&mut buffer[0..p]).ok()
     }
-    
+
     pub fn list_files(&self) {
-        let len = ((self.bytes_per_sector as usize) * (self.sectors_per_cluster as usize)) / size_of::<DirectoryEntry>();
+        let len = ((self.bytes_per_sector as usize) * (self.sectors_per_cluster as usize))
+            / size_of::<DirectoryEntry>();
         let entries = unsafe {
             core::slice::from_raw_parts(self.root_directory_list as *mut DirectoryEntry, len)
         };
@@ -218,5 +227,46 @@ impl Fat32 {
                 log_info!("{}: File Size: {:#X}", file_name, file_size);
             }
         }
+    }
+
+    pub fn search_file(&self, target_name: &str) -> Option<FileInfo> {
+        let len = ((self.bytes_per_sector as usize) * self.sectors_per_cluster as usize)
+            / size_of::<DirectoryEntry>();
+        let entries = unsafe {
+            core::slice::from_raw_parts(self.root_directory_list as *const DirectoryEntry, len)
+        };
+        assert_eq!(size_of::<DirectoryEntry>(), 32);
+
+        for e in entries {
+            if (e.attribute & 0x3F) == FAT32_ATTRIBUTE_LONG_FILE_NAME {
+                continue;
+            }
+            if (e.attribute & FAT32_ATTRIBUTE_DIRECTORY) != 0 {
+                continue;
+            }
+            if e.name[0] == 0 {
+                break;
+            } else if e.name[0] == 0xE5 {
+                continue;
+            }
+            let mut buffer = [0u8; 12];
+            if let Some(file_name) = Self::get_file_name(e, &mut buffer) {
+                let mut is_same = file_name == target_name;
+                if !is_same {
+                    file_name.make_ascii_lowercase();
+                    is_same = file_name == target_name;
+                }
+                if is_same {
+                    let entry_cluster = ((e.starting_cluster_number_high as u32) << 16)
+                        | (e.starting_cluster_number as u32);
+                    let file_size = e.file_length;
+                    return Some(FileInfo {
+                        entry_cluster,
+                        file_size,
+                    });
+                }
+            }
+        }
+        None
     }
 }

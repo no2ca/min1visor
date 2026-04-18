@@ -340,8 +340,8 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) {
     // ファイルのリストアップとmin1.elfの読み込み
     let fat32 = fat32.expect("The FAT32 Partition is not found!");
     fat32.list_files();
-    // let file_info = fat32.search_file("MIN1.ELF").unwrap();
-    // let elf_data: [u8; 512] = [0u8; 512];
+    let file_info = fat32.search_file("MIN1.ELF").unwrap();
+    let elf_data: [u8; 512] = [0u8; 512];
     // fat32
     //     .read(&file_info, blk, &elf_data as *const _ as usize, 0, 512)
     //     .expect("Failed to read");
