@@ -2,7 +2,7 @@
 //! 割り込み制御
 //!
 use crate::{
-    PL011_DEVICE, arch::aarch64::registers::*, drivers::gicv3::GicRedistributor, log_debug,
+    PL011_DEVICE, arch::aarch64::registers::*, drivers::gicv3::GicRedistributor,
     log_info, serial::SerialDevice, vm,
 };
 use core::arch::global_asm;
@@ -268,12 +268,11 @@ extern "C" fn irq_handler() {
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
     log_info!("Interrupt Number: {interrupt_number}");
     let pl011_int_id = PL011_DEVICE.lock().interrupt_number;
-    if interrupt_number == pl011_int_id {
-        if interrupt_number == pl011_int_id {
+    if interrupt_number == pl011_int_id
+        && interrupt_number == pl011_int_id {
             let c = PL011_DEVICE.lock().getc().unwrap().unwrap();
             crate::println!("PL011: {}", c as char);
         }
-    }
     // 割り込み終了を通知
     GicRedistributor::send_eoi(interrupt_number, group);
 }

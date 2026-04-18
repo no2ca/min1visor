@@ -1,10 +1,9 @@
 use crate::allocator::linked_list::allocate_pages;
-use crate::arch::aarch64;
+use crate::arch::aarch64::registers::*;
 use crate::drivers::virtio_blk::VirtioBlk;
 use crate::fat32::Fat32;
 use crate::mmio::pl011::Pl011Mmio;
-use crate::{log_debug, paging::*};
-use crate::arch::aarch64::registers::*;
+use crate::paging::*;
 
 use alloc::boxed::Box;
 use alloc::collections::linked_list::LinkedList;
@@ -163,7 +162,7 @@ pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk) -> (usize, usize) {
     fat32
         .read(&kernel, blk, kernel_physical_address, 0, kernel_size)
         .expect("Failed to read Kernel");
-    
+
     // Linux Kernel Headerの解析
     let header = unsafe { &*(kernel_physical_address as *const KernelHeader) };
     if header.magic != 0x644D5241 {
@@ -177,7 +176,7 @@ pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk) -> (usize, usize) {
 
     // VM構造体のリストへの追加
     unsafe { (&raw mut VM_LIST).as_mut().unwrap().push_back(vm) };
-    
+
     (
         kernel_virtual_address + text_offset as usize,
         RAM_VIRTUAL_BASE,

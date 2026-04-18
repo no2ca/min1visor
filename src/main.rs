@@ -55,7 +55,7 @@ use crate::{
 use core::alloc::{GlobalAlloc, Layout};
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
-use core::{arch::asm, sync::atomic::AtomicU8};
+use core::sync::atomic::AtomicU8;
 use core::{ffi::CStr, slice};
 
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Debug as u8);
@@ -113,10 +113,10 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
     // 割り込みコントローラのセットアップ
     let distributor = init_gic_distributor(&dtb);
-    let redistributor = init_gic_redistributor(&dtb);
+    let _redistributor = init_gic_redistributor(&dtb);
 
     // PL011の割り込みのセットアップ
-    enable_serial_port_interrupt(&*PL011_DEVICE.lock(), &distributor);
+    enable_serial_port_interrupt(&PL011_DEVICE.lock(), &distributor);
 
     // virtio_blk (legacy) のセットアップ
     let mut virtioblk = init_virtio_blk(&dtb).unwrap();
@@ -138,7 +138,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     test_main();
 
     let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk);
-    
+
     crate::hal::HypervisorLevel::boot_vm(boot_address, argument)
 }
 
@@ -344,15 +344,13 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) -> fat32::Fat32 {
     fat32
         .read(&file_info, blk, &elf_data as *const _ as usize, 0, 512)
         .expect("Failed to read");
-    
+
     fat32
 }
 
 unsafe impl GlobalAlloc for GlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            unsafe { ALLOCATOR
-                .lock()
-                .alloc(layout.size(), layout.align()) }
+        unsafe { ALLOCATOR.lock().alloc(layout.size(), layout.align()) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {

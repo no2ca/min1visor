@@ -165,7 +165,10 @@ fn linked_list_alloc_accepts_small_unaligned_sizes() {
     assert_eq!(small as usize, TEST_HEAP_START);
 
     let next = unsafe { allocator.alloc(0x10, 0x8) };
-    assert_eq!(next as usize, TEST_HEAP_START + size_of::<crate::allocator::linked_list::ListNode>());
+    assert_eq!(
+        next as usize,
+        TEST_HEAP_START + size_of::<crate::allocator::linked_list::ListNode>()
+    );
 }
 
 #[test_case]

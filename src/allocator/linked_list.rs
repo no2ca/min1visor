@@ -63,7 +63,7 @@ impl LinkedListAllocator {
     ) -> Option<(&'static mut ListNode, usize)> {
         let mut current = &mut self.head;
         while let Some(ref mut region) = current.next {
-            if let Ok(alloc_start) = Self::validate_region(&region, size, align) {
+            if let Ok(alloc_start) = Self::validate_region(region, size, align) {
                 // 適切なノードが見つかったらリストから外す
                 let next = region.next.take();
                 let ret = Some((current.next.take().unwrap(), alloc_start));
@@ -144,7 +144,7 @@ pub fn allocate_pages(number_of_pages: usize, align_order: usize) -> Result<usiz
             .lock()
             .alloc(number_of_pages << paging::PAGE_SHIFT, 1 << align_order)
     };
-    if ptr == ptr::null_mut() {
+    if ptr.is_null() {
         Err(())
     } else {
         Ok(ptr as usize)
