@@ -158,6 +158,17 @@ fn linked_list_alloc_exhausts_range_and_then_fails() {
 }
 
 #[test_case]
+fn linked_list_alloc_accepts_small_unaligned_sizes() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    let small = unsafe { allocator.alloc(2, 2) };
+    assert_eq!(small as usize, TEST_HEAP_START);
+
+    let next = unsafe { allocator.alloc(0x10, 0x8) };
+    assert_eq!(next as usize, TEST_HEAP_START + size_of::<crate::allocator::linked_list::ListNode>());
+}
+
+#[test_case]
 fn linked_list_dealloc_makes_region_reusable() {
     let mut allocator = make_allocator_with_test_heap();
 

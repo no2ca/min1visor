@@ -41,7 +41,7 @@ impl LinkedListAllocator {
     }
 
     /// 空きリストの先頭にノードを追加する
-    unsafe fn add_free_region(&mut self, addr: usize, size: usize) {
+    pub unsafe fn add_free_region(&mut self, addr: usize, size: usize) {
         assert_eq!(align_up(addr, core::mem::align_of::<ListNode>()), addr);
         assert!(size >= core::mem::size_of::<ListNode>());
 
@@ -96,7 +96,16 @@ impl LinkedListAllocator {
         Ok(alloc_start)
     }
 
+    fn size_align(size: usize, align: usize) -> (usize, usize) {
+        let list_node_align = core::mem::align_of::<ListNode>();
+        let align = align.max(list_node_align);
+        let size = size.max(core::mem::size_of::<ListNode>());
+        let size = align_up(size, list_node_align);
+        (size, align)
+    }
+
     pub unsafe fn alloc(&mut self, size: usize, align: usize) -> *mut u8 {
+        let (size, align) = Self::size_align(size, align);
         if let Some((region, alloc_start)) = self.find_and_take_region(size, align) {
             let alloc_end = alloc_start.checked_add(size).expect("overflow");
             let excess_size = region.end_addr() - alloc_end;
@@ -112,6 +121,13 @@ impl LinkedListAllocator {
     }
 
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, size: usize) {
+        unsafe {
+            self.dealloc_aligned(ptr, size, 1);
+        }
+    }
+
+    pub unsafe fn dealloc_aligned(&mut self, ptr: *mut u8, size: usize, align: usize) {
+        let (size, _) = Self::size_align(size, align);
         unsafe {
             self.add_free_region(ptr as usize, size);
         }

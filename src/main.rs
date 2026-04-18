@@ -15,6 +15,8 @@
 #![test_runner(crate::tests::runner::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+
 mod dtb;
 mod drivers {
     pub mod gicv3;
@@ -43,12 +45,14 @@ mod mmio {
     pub mod pl011;
 }
 mod fat32;
+mod vm;
 
 use crate::drivers::{gicv3, virtio_blk};
 use crate::{
     allocator::linked_list::LinkedListAllocator, hal::HypervisorControl, log::LogLevel,
     mutex::Mutex,
 };
+use core::alloc::{GlobalAlloc, Layout};
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
 use core::{arch::asm, sync::atomic::AtomicU8};
@@ -57,6 +61,10 @@ use core::{ffi::CStr, slice};
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Debug as u8);
 static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::invalid());
 static ALLOCATOR: Mutex<LinkedListAllocator> = Mutex::new(LinkedListAllocator::new());
+
+struct GlobalAllocator {}
+#[global_allocator]
+static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator {};
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -129,7 +137,9 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     #[cfg(test)]
     test_main();
 
-    hal::HypervisorLevel::boot_vm(el1_main as *const fn() as usize);
+    vm::create_vm();
+    
+    unimplemented!()
 }
 
 extern "C" fn el1_main() {
@@ -345,4 +355,20 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) {
     fat32
         .read(&file_info, blk, &elf_data as *const _ as usize, 0, 512)
         .expect("Failed to read");
+}
+
+unsafe impl GlobalAlloc for GlobalAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            unsafe { ALLOCATOR
+                .lock()
+                .alloc(layout.size(), layout.align()) }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unsafe {
+            ALLOCATOR
+                .lock()
+                .dealloc_aligned(ptr, layout.size(), layout.align());
+        }
+    }
 }
