@@ -11,5 +11,5 @@ pub type HypervisorLevel = crate::arch::aarch64::AArch64Hypervisor;
 
 pub trait HypervisorControl {
     fn setup_hypervisor();
-    fn boot_vm(entry_point: usize) -> !;
+    fn boot_vm(entry_point: usize, argument: usize) -> !;
 }

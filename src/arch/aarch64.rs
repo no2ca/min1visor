@@ -73,7 +73,7 @@ impl hal::HypervisorControl for AArch64Hypervisor {
             HCR_EL2_RW | HCR_EL2_API | HCR_EL2_AMO | HCR_EL2_IMO | HCR_EL2_FMO | HCR_EL2_VM;
         unsafe { set_hcr_el2(hcr_el2) };
     }
-    fn boot_vm(entry_point: usize) -> ! {
+    fn boot_vm(entry_point: usize, argument: usize) -> ! {
         unsafe {
             set_spsr_el2(SPSR_EL2_M_EL1H);
             set_elr_el2(entry_point as u64);
@@ -81,7 +81,7 @@ impl hal::HypervisorControl for AArch64Hypervisor {
             crate::arch::aarch64::set_sp_el1(
                 (allocate_pages(1, paging::PAGE_SHIFT).unwrap() + paging::PAGE_SIZE) as u64,
             );
-            eret(0, 0, 0, 0);
+            eret(argument as u64, 0, 0, 0);
         }
     }
 }
@@ -122,15 +122,15 @@ pub unsafe fn set_hcr_el2(hcr_el2: u64) {
     unsafe { asm!("msr hcr_el2, {}", in(reg) hcr_el2) };
 }
 
-unsafe fn set_spsr_el2(spsr_el2: u64) {
+pub(crate) unsafe fn set_spsr_el2(spsr_el2: u64) {
     unsafe { asm!("msr spsr_el2, {}", in(reg) spsr_el2) };
 }
 
-unsafe fn set_elr_el2(elr_el2: u64) {
+pub(crate) unsafe fn set_elr_el2(elr_el2: u64) {
     unsafe { asm!("msr elr_el2, {}", in(reg) elr_el2) };
 }
 
-unsafe fn eret(x0: u64, x1: u64, x2: u64, x3: u64) -> ! {
+pub(crate) unsafe fn eret(x0: u64, x1: u64, x2: u64, x3: u64) -> ! {
     unsafe {
         asm!("eret",
              in("x0") x0,

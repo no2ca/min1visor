@@ -122,7 +122,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     let mut virtioblk = init_virtio_blk(&dtb).unwrap();
 
     // fat32のセットアップ
-    init_fat32(&mut virtioblk);
+    let fat32 = init_fat32(&mut virtioblk);
 
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
@@ -137,20 +137,9 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     #[cfg(test)]
     test_main();
 
-    vm::create_vm();
+    let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk);
     
-    unimplemented!()
-}
-
-extern "C" fn el1_main() {
-    use crate::serial::SerialDevice;
-    let pl011 = drivers::pl011::Pl011::new(0x9000000, 0x1000, 0).unwrap();
-    for c in b"Hello from EL1\n" {
-        let _ = pl011.putc(*c);
-    }
-    loop {
-        unsafe { asm!("wfi") }
-    }
+    crate::hal::HypervisorLevel::boot_vm(boot_address, argument)
 }
 
 fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
@@ -313,7 +302,7 @@ fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
     }
 }
 
-pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) {
+pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) -> fat32::Fat32 {
     #[derive(Debug)]
     #[repr(C)]
     struct PartitionTableEntry {
@@ -355,6 +344,8 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) {
     fat32
         .read(&file_info, blk, &elf_data as *const _ as usize, 0, 512)
         .expect("Failed to read");
+    
+    fat32
 }
 
 unsafe impl GlobalAlloc for GlobalAllocator {
