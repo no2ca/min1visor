@@ -345,5 +345,4 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) {
     fat32
         .read(&file_info, blk, &elf_data as *const _ as usize, 0, 512)
         .expect("Failed to read");
-    println!("{:#X?}", elf_data);
 }

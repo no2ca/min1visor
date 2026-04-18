@@ -168,7 +168,7 @@ impl Fat32 {
         let length = (sectors as u64) * (self.bytes_per_sector as u64);
         blk.read(buffer, block_address, length)
     }
-    
+
     /// 現在のクラスタ番号からの次のクラスタ番号を取得する
     fn get_next_cluster(&self, cluster: u32) -> Option<u32> {
         let fat = unsafe {
@@ -216,6 +216,21 @@ impl Fat32 {
             p += 1;
         }
         core::str::from_utf8_mut(&mut buffer[0..p]).ok()
+    }
+
+    fn write_sectors(
+        &self,
+        blk: &mut VirtioBlk,
+        buffer: usize,
+        base_sector: u32,
+        sectors: u32,
+    ) -> Result<(), ()> {
+        blk.write(
+            buffer,
+            ((self.base_lba * self.lba_size)
+                + (base_sector as usize) * (self.bytes_per_sector as usize)) as u64,
+            (sectors as u64) * (self.bytes_per_sector as u64),
+        )
     }
 
     pub fn list_files(&self) {
@@ -285,7 +300,7 @@ impl Fat32 {
         }
         None
     }
-    
+
     pub fn read(
         &self,
         file_info: &FileInfo,
@@ -302,7 +317,7 @@ impl Fat32 {
             // 読み込む長さがファイルを超えてしまう場合はファイルの終端に合わせる
             length = (file_info.file_size as usize) - offset;
         }
-        
+
         macro_rules! next_cluster {
             ($c:expr) => {
                 match self.get_next_cluster($c) {
@@ -314,21 +329,21 @@ impl Fat32 {
                 }
             };
         }
-        
+
         let bytes_per_cluster = self.sectors_per_cluster as usize * self.bytes_per_sector as usize;
         let clusters_to_skip = offset / bytes_per_cluster;
         let mut data_offset = offset - clusters_to_skip * bytes_per_cluster;
         let mut reading_cluster = file_info.entry_cluster;
         let mut buffer_pointer = 0usize;
-        
+
         for _ in 0..clusters_to_skip {
             reading_cluster = next_cluster!(reading_cluster);
         }
-        
+
         // クラスタごとの読み込みをするループ
         loop {
             let mut sectors = 0;
-            let mut read_bytes = 0; 
+            let mut read_bytes = 0;
             let mut sector_offset = 0;
             let first_cluster = reading_cluster;
             let mut data_offset_backup = data_offset;
@@ -341,7 +356,7 @@ impl Fat32 {
                     data_offset -= (sector_offset as usize) * (self.bytes_per_sector as usize);
                     data_offset_backup = data_offset;
                 }
-                
+
                 // 読み込むサイズが1クラスタ分に満たない場合
                 if (length - read_bytes + data_offset) <= bytes_per_cluster {
                     sectors += (1
@@ -350,7 +365,7 @@ impl Fat32 {
                     read_bytes += length - read_bytes;
                     break;
                 }
-                
+
                 // 1クラスタ分読み込む
                 sectors += self.sectors_per_cluster as u32;
                 read_bytes += bytes_per_cluster - data_offset;
@@ -363,9 +378,9 @@ impl Fat32 {
                 data_offset = 0;
                 reading_cluster = next_cluster;
             }
-            
+
             data_offset = data_offset_backup;
-            
+
             let aligned_buffer_size = (((sectors as usize) * (self.bytes_per_sector as usize))
                 & (!(self.lba_size - 1)))
                 + self.lba_size;
@@ -378,7 +393,7 @@ impl Fat32 {
 
             let sector = self.cluster_to_sector(first_cluster) + sector_offset;
             if self.read_sectors(blk, buffer, sector, sectors).is_err() {
-                // TODO: 
+                // TODO:
                 // if data_offset != 0 {
                 //     free_pages(buffer, (aligned_buffer_size >> PAGE_SHIFT) + 1);
                 // }
@@ -393,7 +408,7 @@ impl Fat32 {
                         read_bytes,
                     )
                 };
-                // TODO: 
+                // TODO:
                 // free_pages(buffer, (aligned_buffer_size >> PAGE_SHIFT) + 1);
                 data_offset = 0;
             }
@@ -402,6 +417,103 @@ impl Fat32 {
                 break;
             }
             reading_cluster = next_cluster!(reading_cluster)
+        }
+        Ok(buffer_pointer)
+    }
+
+    pub fn write(
+        &self,
+        file_info: &FileInfo,
+        blk: &mut VirtioBlk,
+        buffer_address: usize,
+        offset: usize,
+        mut length: usize,
+    ) -> Result<usize, ()> {
+        if offset + length > file_info.file_size as usize {
+            if offset >= file_info.file_size as usize {
+                return Ok(0);
+            }
+            length = (file_info.file_size as usize) - offset;
+        }
+
+        macro_rules! next_cluster {
+            ($c:expr) => {
+                match self.get_next_cluster($c) {
+                    Some(n) => n,
+                    None => {
+                        log_warn!("Failed to get next cluster");
+                        return Err(());
+                    }
+                }
+            };
+        }
+
+        let bytes_per_cluster = self.sectors_per_cluster as usize * self.bytes_per_sector as usize;
+        let clusters_to_skip = offset / bytes_per_cluster;
+        let mut data_offset = offset - clusters_to_skip * bytes_per_cluster;
+        let mut writing_cluster = file_info.entry_cluster;
+        let mut buffer_pointer = 0usize;
+
+        for _ in 0..clusters_to_skip {
+            writing_cluster = next_cluster!(writing_cluster);
+        }
+
+        loop {
+            let mut sectors = 0;
+            let mut write_bytes = 0;
+            let mut sector_offset = 0;
+            let first_cluster = writing_cluster;
+            let mut data_offset_backup = data_offset;
+
+            loop {
+                if length - write_bytes < (self.bytes_per_sector as usize) {
+                    log_warn!(
+                        "The size to write must be {}-aligned",
+                        self.bytes_per_sector
+                    );
+                    return Err(());
+                }
+                // 飛ばすセクタ数の計算
+                if data_offset > (self.bytes_per_sector as usize) {
+                    sector_offset = (data_offset / self.bytes_per_sector as usize) as u32;
+                    data_offset -= (sector_offset as usize) * (self.bytes_per_sector as usize);
+                    data_offset_backup = data_offset;
+                }
+                // 書き込むサイズが1クラスタ分に満たない場合
+                if (length - write_bytes + data_offset) <= bytes_per_cluster {
+                    sectors += (1
+                        + ((length - write_bytes + data_offset).max(1) - 1)
+                            / self.bytes_per_sector as usize) as u32;
+                    write_bytes += length - write_bytes;
+                    break;
+                }
+                // 1クラスタ丸々書き込む
+                sectors += self.sectors_per_cluster as u32;
+                write_bytes += bytes_per_cluster - data_offset;
+
+                let next_cluster = next_cluster!(writing_cluster);
+                if next_cluster != writing_cluster + 1 {
+                    // クラスタが連続していない
+                    break;
+                }
+                data_offset = 0;
+                writing_cluster = next_cluster;
+            }
+            data_offset = data_offset_backup;
+            if data_offset != 0 {
+                log_warn!(
+                    "The size to write must be {}-aligned",
+                    self.bytes_per_sector
+                );
+                return Err(());
+            }
+            let sector = self.cluster_to_sector(first_cluster) + sector_offset;
+            self.write_sectors(blk, buffer_address + buffer_pointer, sector, sectors)?;
+            buffer_pointer += write_bytes;
+            if length == buffer_pointer {
+                break;
+            }
+            writing_cluster = next_cluster!(writing_cluster);
         }
         Ok(buffer_pointer)
     }
@@ -472,7 +584,14 @@ mod tests {
     fn fat32_search_file_ignores_non_files_and_matches_case_insensitive() {
         // 検索時のフィルタ条件を確認, LFNとディレクトリ除外と大文字小文字差分を検証
         let mut entries = [
-            build_entry(*b"LONGNAME", *b"LNG", FAT32_ATTRIBUTE_LONG_FILE_NAME, 0, 0, 0),
+            build_entry(
+                *b"LONGNAME",
+                *b"LNG",
+                FAT32_ATTRIBUTE_LONG_FILE_NAME,
+                0,
+                0,
+                0,
+            ),
             build_entry(*b"BOOT    ", *b"   ", FAT32_ATTRIBUTE_DIRECTORY, 0, 2, 0),
             build_entry(*b"MIN1    ", *b"ELF", 0, 0xABCD, 0x1234, 0x2500),
             build_entry([0; 8], [0; 3], 0, 0, 0, 0),
@@ -537,5 +656,11 @@ mod tests {
 
         assert_eq!(fat32.cluster_to_sector(2), 232);
         assert_eq!(fat32.cluster_to_sector(5), 256);
+    }
+}
+
+impl FileInfo {
+    pub fn get_file_size(&self) -> usize {
+        self.file_size as usize
     }
 }
