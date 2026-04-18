@@ -110,8 +110,8 @@ fn log_level_threshold_matrix_is_consistent() {
 #[test_case]
 fn log_level_strings_are_stable() {
     assert_eq!(log::level_str(LogLevel::Error), "ERROR");
-    assert_eq!(log::level_str(LogLevel::Warn), "WARN");
-    assert_eq!(log::level_str(LogLevel::Info), "INFO");
+    assert_eq!(log::level_str(LogLevel::Warn), " WARN");
+    assert_eq!(log::level_str(LogLevel::Info), " INFO");
     assert_eq!(log::level_str(LogLevel::Debug), "DEBUG");
 }
 
