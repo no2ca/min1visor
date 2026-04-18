@@ -138,7 +138,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     test_main();
 
     let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk);
-
+    log_info!("Booting VM...");
     crate::hal::HypervisorLevel::boot_vm(boot_address, argument)
 }
 
@@ -190,10 +190,10 @@ pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stac
         .read_reg_property(&memory, 0)
         .expect("Expected reg entry");
     let ram_end = ram_start + ram_size;
-    crate::println!("RAM is [{:#X} ~ {:#X}]", ram_start, ram_end);
+    crate::log_info!("RAM is [{:#X} ~ {:#X}]", ram_start, ram_end);
 
     // DTB領域を確認
-    crate::println!(
+    crate::log_info!(
         "DTB is [{:#X} ~ {:#X}]",
         dtb_address,
         dtb_address + dtb.get_total_size()
@@ -206,7 +206,7 @@ pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stac
         if p.get_segment_type() == elf::ELF_PROGRAM_HEADER_SEGMENT_LOAD {
             let start = p.get_physical_address() as usize;
             let size = p.get_memory_size() as usize;
-            crate::println!("ELF is [{:#X} ~ {:#X}]", start, start + size);
+            crate::log_info!("ELF is [{:#X} ~ {:#X}]", start, start + size);
             elf_end = elf_end.max(start + size);
         }
     }
@@ -215,10 +215,10 @@ pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stac
     const STACK_SIZE: usize = 0x10000;
     let stack_end = ((stack_pointer - 1) & !(paging::PAGE_SIZE - 1)) + paging::PAGE_SIZE;
     let stack_start = stack_end - STACK_SIZE;
-    crate::println!("Reserve [{:#X} ~ {:#X}] for Stack", stack_start, stack_end);
+    crate::log_info!("Reserve [{:#X} ~ {:#X}] for Stack", stack_start, stack_end);
 
     // メモリを初期化
-    crate::println!("Initialize heap [{:#X} ~ {:#X}]", elf_end, stack_start);
+    crate::log_info!("Initialize heap [{:#X} ~ {:#X}]", elf_end, stack_start);
     unsafe { ALLOCATOR.lock().init(elf_end, stack_start) };
 }
 
@@ -249,7 +249,7 @@ fn str_to_usize(s: &str) -> Option<usize> {
 fn init_gic_distributor(dtb: &dtb::Dtb) -> gicv3::GicDistributor {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-v3", None).unwrap();
     let (base_address, size) = dtb.read_reg_property(&gic_node, 0).unwrap();
-    crate::println!("GIC Distributor's Base Address: {:#X}", base_address);
+    crate::log_info!("GIC Distributor's Base Address: {:#X}", base_address);
     let gic_distributor = gicv3::GicDistributor::new(base_address, size).unwrap();
     gic_distributor.init();
     gic_distributor
@@ -258,7 +258,7 @@ fn init_gic_distributor(dtb: &dtb::Dtb) -> gicv3::GicDistributor {
 fn init_gic_redistributor(dtb: &dtb::Dtb) -> gicv3::GicRedistributor {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-v3", None).unwrap();
     let (base_address, size) = dtb.read_reg_property(&gic_node, 1).unwrap();
-    crate::println!("GIC Redistributor's Base Address: {:#X}", base_address);
+    crate::log_info!("GIC Redistributor's Base Address: {:#X}", base_address);
     let gic_redistributor = gicv3::get_self_redistributor(base_address, size).unwrap();
     gic_redistributor.init();
     gic_redistributor
@@ -270,7 +270,7 @@ fn enable_serial_port_interrupt(
 ) {
     let int_id = pl011.interrupt_number;
     if int_id == 0 {
-        crate::println!("PL011 does not support interrupt.");
+        crate::log_warn!("PL011 does not support interrupt.");
         return;
     }
     distributor.set_group(int_id, gicv3::GicGroup::NonSecureGroup1);
@@ -328,9 +328,8 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) -> fat32::Fat32 {
     };
     let mut fat32 = Err(());
     for entry in partition_table {
-        log_debug!("{:?}", entry);
+        log_debug!("{:#?}", entry);
         if entry.partition_type == 0x0C {
-            log_debug!("ok");
             fat32 = fat32::Fat32::new(blk, entry.first_sector_lba as usize, 512);
             break;
         }

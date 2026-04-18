@@ -26,8 +26,8 @@ pub fn log_enabled(level: LogLevel) -> bool {
 pub fn level_str(level: LogLevel) -> &'static str {
     match level {
         LogLevel::Error => "ERROR",
-        LogLevel::Warn => "WARN",
-        LogLevel::Info => "INFO",
+        LogLevel::Warn => " WARN",
+        LogLevel::Info => " INFO",
         LogLevel::Debug => "DEBUG",
     }
 }
