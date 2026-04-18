@@ -168,6 +168,22 @@ impl Fat32 {
         let length = (sectors as u64) * (self.bytes_per_sector as u64);
         blk.read(buffer, block_address, length)
     }
+    
+    /// 現在のクラスタ番号からの次のクラスタ番号を取得する
+    fn get_next_cluster(&self, cluster: u32) -> Option<u32> {
+        let fat = unsafe {
+            core::slice::from_raw_parts(
+                self.fat as *const u32,
+                (self.fat_sectors as usize * self.bytes_per_sector as usize) / size_of::<u32>(),
+            )
+        };
+        let n = fat.get(cluster as usize)?;
+        if (2..0x0FFFFFF8).contains(n) {
+            Some(*n)
+        } else {
+            None
+        }
+    }
 
     fn get_file_name<'a>(entry: &DirectoryEntry, buffer: &'a mut [u8; 12]) -> Option<&'a mut str> {
         if entry.name[0] == 0x05 {
@@ -268,5 +284,125 @@ impl Fat32 {
             }
         }
         None
+    }
+    
+    pub fn read(
+        &self,
+        file_info: &FileInfo,
+        blk: &mut VirtioBlk,
+        buffer_address: usize,
+        offset: usize,
+        mut length: usize,
+    ) -> Result<usize, ()> {
+        if offset + length > file_info.file_size as usize {
+            // offsetがファイルサイズを超えていた場合は何も読み込まない
+            if offset >= file_info.file_size as usize {
+                return Ok(0);
+            }
+            // 読み込む長さがファイルを超えてしまう場合はファイルの終端に合わせる
+            length = (file_info.file_size as usize) - offset;
+        }
+        
+        macro_rules! next_cluster {
+            ($c:expr) => {
+                match self.get_next_cluster($c) {
+                    Some(n) => n,
+                    None => {
+                        log_warn!("Failed to get next cluster");
+                        return Err(());
+                    }
+                }
+            };
+        }
+        
+        let bytes_per_cluster = self.sectors_per_cluster as usize * self.bytes_per_sector as usize;
+        let clusters_to_skip = offset / bytes_per_cluster;
+        let mut data_offset = offset - clusters_to_skip * bytes_per_cluster;
+        let mut reading_cluster = file_info.entry_cluster;
+        let mut buffer_pointer = 0usize;
+        
+        for _ in 0..clusters_to_skip {
+            reading_cluster = next_cluster!(reading_cluster);
+        }
+        
+        // クラスタごとの読み込みをするループ
+        loop {
+            let mut sectors = 0;
+            let mut read_bytes = 0; 
+            let mut sector_offset = 0;
+            let first_cluster = reading_cluster;
+            let mut data_offset_backup = data_offset;
+
+            // 連続して読み込めるセクタ数を求めるループ
+            loop {
+                // 読み飛ばすセクタ数の計算
+                if data_offset > (self.bytes_per_sector as usize) {
+                    sector_offset = (data_offset / self.bytes_per_sector as usize) as u32;
+                    data_offset -= (sector_offset as usize) * (self.bytes_per_sector as usize);
+                    data_offset_backup = data_offset;
+                }
+                
+                // 読み込むサイズが1クラスタ分に満たない場合
+                if (length - read_bytes + data_offset) <= bytes_per_cluster {
+                    sectors += (1
+                        + ((length - read_bytes + data_offset).max(1) - 1)
+                            / self.bytes_per_sector as usize) as u32;
+                    read_bytes += length - read_bytes;
+                    break;
+                }
+                
+                // 1クラスタ分読み込む
+                sectors += self.sectors_per_cluster as u32;
+                read_bytes += bytes_per_cluster - data_offset;
+
+                let next_cluster = next_cluster!(reading_cluster);
+                if next_cluster != reading_cluster + 1 {
+                    // クラスタが連続していない
+                    break;
+                }
+                data_offset = 0;
+                reading_cluster = next_cluster;
+            }
+            
+            data_offset = data_offset_backup;
+            
+            let aligned_buffer_size = (((sectors as usize) * (self.bytes_per_sector as usize))
+                & (!(self.lba_size - 1)))
+                + self.lba_size;
+            // Offsetがある場合は先に別のページに読み込んで, あとからoffsetをつけてコピーする
+            let buffer = if data_offset != 0 {
+                allocate_pages((aligned_buffer_size >> PAGE_SHIFT) + 1, 0).or(Err(()))?
+            } else {
+                buffer_address + buffer_pointer
+            };
+
+            let sector = self.cluster_to_sector(first_cluster) + sector_offset;
+            if self.read_sectors(blk, buffer, sector, sectors).is_err() {
+                // TODO: 
+                // if data_offset != 0 {
+                //     free_pages(buffer, (aligned_buffer_size >> PAGE_SHIFT) + 1);
+                // }
+                return Err(());
+            };
+            if data_offset != 0 {
+                assert_eq!(buffer_pointer, 0);
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        (buffer + data_offset) as *const u8,
+                        buffer_address as *mut u8,
+                        read_bytes,
+                    )
+                };
+                // TODO: 
+                // free_pages(buffer, (aligned_buffer_size >> PAGE_SHIFT) + 1);
+                data_offset = 0;
+            }
+            buffer_pointer += read_bytes;
+            if length == buffer_pointer {
+                break;
+            }
+            reading_cluster = next_cluster!(reading_cluster)
+        }
+        Ok(buffer_pointer)
     }
 }
