@@ -86,7 +86,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     if let Err(e) = init_pl011_serial_port(&dtb) {
         return e;
     };
-    // これ以前はprintln!()などを使用しない
+    // ここより上はprintln!()などのシリアル通信を使用しない
 
     // メモリ管理のセットアップ
     let elf_addr_str = unsafe { CStr::from_ptr(args[1]) }
@@ -112,13 +112,6 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
     // virtio_blk (legacy) のセットアップ
     let mut virtioblk = init_virtio_blk(&dtb).unwrap();
-    // let mut buffer: [u8; 512] = [0; 512];
-    // virtioblk
-    //     .read(&mut buffer as *mut _ as usize, 0, 512)
-    //     .expect("Failed to read first 512bytes");
-    // crate::println!("{:#X?}", buffer);
-    // let boot_signature = [buffer[510], buffer[511]];
-    // assert_eq!(u16::from_le_bytes(boot_signature), 0xAA55); /* BOOT Signature */
 
     // fat32のセットアップ
     init_fat32(&mut virtioblk);
@@ -344,10 +337,10 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) {
         }
     }
 
-    // ファイルのリストアップとmin1visor.elfの読み込み
+    // ファイルのリストアップとmin1.elfの読み込み
     let fat32 = fat32.expect("The FAT32 Partition is not found!");
-    // fat32.list_files();
-    // let file_info = fat32.search_file("MIN1VISOR.ELF").unwrap();
+    fat32.list_files();
+    // let file_info = fat32.search_file("MIN1.ELF").unwrap();
     // let elf_data: [u8; 512] = [0u8; 512];
     // fat32
     //     .read(&file_info, blk, &elf_data as *const _ as usize, 0, 512)

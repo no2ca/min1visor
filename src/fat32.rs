@@ -1,6 +1,6 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::drivers::virtio_blk::VirtioBlk;
-use crate::log_warn;
+use crate::{log_debug, log_info, log_warn};
 use crate::paging::PAGE_SHIFT;
 
 const FAT32_SIGNATURE: [u8; 8] = [b'F', b'A', b'T', b'3', b'2', b' ', b' ', b' '];
@@ -159,5 +159,64 @@ impl Fat32 {
             as u64;
         let length = (sectors as u64) * (self.bytes_per_sector as u64);
         blk.read(buffer, block_address, length)
+    }
+    
+    fn get_file_name<'a>(entry: &DirectoryEntry, buffer: &'a mut [u8; 12]) -> Option<&'a mut str> {
+        if entry.name[0] == 0x05 {
+            // 0xE5は無効なファイルとして扱われる
+            // ASCII文字以外では0xE5は使用される場合があり, 0x05に置き換えられている
+            buffer[0] = 0xE5;
+        } else {
+            buffer[0] = entry.name[0];
+        }
+        let mut p = 0;
+        for n in &entry.name[1..] {
+            if *n == b' ' {
+                continue;
+            }
+            p += 1;
+            buffer[p] = *n;
+        }
+        p += 1;
+        buffer[p] = b'.';
+        for n in &entry.name_extension {
+            if *n == b' ' {
+                continue;
+            }
+            p += 1;
+            buffer[p] = *n;
+        }
+        if buffer[p] == b'.' {
+            buffer[p] = 0;
+        } else {
+            p += 1;
+        }
+        core::str::from_utf8_mut(&mut buffer[0..p]).ok()
+    }
+    
+    pub fn list_files(&self) {
+        let len = ((self.bytes_per_sector as usize) * (self.sectors_per_cluster as usize)) / size_of::<DirectoryEntry>();
+        let entries = unsafe {
+            core::slice::from_raw_parts(self.root_directory_list as *mut DirectoryEntry, len)
+        };
+        for e in entries {
+            if (e.attribute & 0x3F) == FAT32_ATTRIBUTE_LONG_FILE_NAME {
+                continue;
+            }
+            if (e.attribute & FAT32_ATTRIBUTE_DIRECTORY) != 0 {
+                continue;
+            }
+            if e.name[0] == 0 {
+                continue;
+            } else if e.name[0] == 0xE5 {
+                log_debug!("continued with 0xE5");
+                continue;
+            }
+            let mut buffer = [0u8; 12];
+            if let Some(file_name) = Self::get_file_name(e, &mut buffer) {
+                let file_size = e.file_length;
+                log_info!("{}: File Size: {:#X}", file_name, file_size);
+            }
+        }
     }
 }

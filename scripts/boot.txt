@@ -1,8 +1,8 @@
 setenv autostart yes
 
-if load virtio 0 $kernel_addr_r min1visor.elf; then
+if load virtio 0 $kernel_addr_r min1.elf; then
 	bootelf $kernel_addr_r $fdt_addr $kernel_addr_r
 else
-	echo "Unable to read min1visor.elf"
+	echo "Unable to read min1.elf"
 fi
 sleep 10000000
