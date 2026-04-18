@@ -406,3 +406,136 @@ impl Fat32 {
         Ok(buffer_pointer)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_entry(
+        name: [u8; 8],
+        extension: [u8; 3],
+        attribute: u8,
+        cluster_high: u16,
+        cluster_low: u16,
+        file_length: u32,
+    ) -> DirectoryEntry {
+        DirectoryEntry {
+            name,
+            name_extension: extension,
+            attribute,
+            reserved: [0; 8],
+            starting_cluster_number_high: cluster_high,
+            time_recorded: 0,
+            date_recorded: 0,
+            starting_cluster_number: cluster_low,
+            file_length,
+        }
+    }
+
+    fn make_fat32_for_test(
+        bytes_per_sector: u16,
+        sectors_per_cluster: u8,
+        reserved_sectors: u16,
+        fat_sectors: u32,
+        number_of_fats: u16,
+        fat: usize,
+        root_directory_list: usize,
+    ) -> Fat32 {
+        Fat32 {
+            base_lba: 0,
+            lba_size: 512,
+            bytes_per_sector,
+            sectors_per_cluster,
+            reserved_sectors,
+            fat_sectors,
+            number_of_fats,
+            fat,
+            root_directory_list,
+        }
+    }
+
+    #[test_case]
+    fn fat32_get_file_name_handles_with_and_without_extension() {
+        // 8.3形式の名前変換を確認, 拡張子ありとなしの両方を検証
+        let with_ext = build_entry(*b"MIN1    ", *b"ELF", 0, 0, 0, 0);
+        let mut with_ext_buf = [0u8; 12];
+        let with_ext_name = Fat32::get_file_name(&with_ext, &mut with_ext_buf).unwrap();
+        assert_eq!(with_ext_name, "MIN1.ELF");
+
+        let without_ext = build_entry(*b"README  ", *b"   ", 0, 0, 0, 0);
+        let mut without_ext_buf = [0u8; 12];
+        let without_ext_name = Fat32::get_file_name(&without_ext, &mut without_ext_buf).unwrap();
+        assert_eq!(without_ext_name, "README");
+    }
+
+    #[test_case]
+    fn fat32_search_file_ignores_non_files_and_matches_case_insensitive() {
+        // 検索時のフィルタ条件を確認, LFNとディレクトリ除外と大文字小文字差分を検証
+        let mut entries = [
+            build_entry(*b"LONGNAME", *b"LNG", FAT32_ATTRIBUTE_LONG_FILE_NAME, 0, 0, 0),
+            build_entry(*b"BOOT    ", *b"   ", FAT32_ATTRIBUTE_DIRECTORY, 0, 2, 0),
+            build_entry(*b"MIN1    ", *b"ELF", 0, 0xABCD, 0x1234, 0x2500),
+            build_entry([0; 8], [0; 3], 0, 0, 0, 0),
+        ];
+
+        let fat32 = make_fat32_for_test(
+            (entries.len() * size_of::<DirectoryEntry>()) as u16,
+            1,
+            32,
+            100,
+            2,
+            0,
+            entries.as_mut_ptr() as usize,
+        );
+
+        let file = fat32.search_file("min1.elf").expect("file should be found");
+        assert_eq!(file.entry_cluster, 0xABCD_1234);
+        assert_eq!(file.file_size, 0x2500);
+    }
+
+    #[test_case]
+    fn fat32_search_file_stops_at_end_marker() {
+        // 終端マーカーで探索停止することを確認, 終端以降の有効エントリを無視することを検証
+        let mut entries = [
+            build_entry([0; 8], [0; 3], 0, 0, 0, 0),
+            build_entry(*b"MIN1    ", *b"ELF", 0, 0, 2, 0x1000),
+        ];
+
+        let fat32 = make_fat32_for_test(
+            (entries.len() * size_of::<DirectoryEntry>()) as u16,
+            1,
+            32,
+            100,
+            2,
+            0,
+            entries.as_mut_ptr() as usize,
+        );
+
+        assert!(fat32.search_file("MIN1.ELF").is_none());
+    }
+
+    #[test_case]
+    fn fat32_get_next_cluster_respects_fat_boundaries() {
+        // FATチェーン追跡の境界を確認, 有効値とEOCと範囲外の扱いを検証
+        let mut fat = [0u32; 8];
+        fat[2] = 3;
+        fat[3] = 0x0FFF_FFF8;
+        fat[4] = 1;
+
+        let fat32 = make_fat32_for_test(32, 1, 32, 1, 2, fat.as_mut_ptr() as usize, 0);
+
+        assert_eq!(fat32.get_next_cluster(2), Some(3));
+        assert_eq!(fat32.get_next_cluster(3), None);
+        assert_eq!(fat32.get_next_cluster(4), None);
+        assert_eq!(fat32.get_next_cluster(100), None);
+    }
+
+    #[test_case]
+    fn fat32_cluster_to_sector_uses_reserved_and_fat_regions() {
+        // クラスタからセクタへの計算を確認, 予約領域とFAT領域の加算を検証
+        let fat32 = make_fat32_for_test(512, 8, 32, 100, 2, 0, 0);
+
+        assert_eq!(fat32.cluster_to_sector(2), 232);
+        assert_eq!(fat32.cluster_to_sector(5), 256);
+    }
+}
