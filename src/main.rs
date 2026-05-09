@@ -42,9 +42,11 @@ mod elf;
 mod exeption;
 mod paging;
 mod mmio {
+    pub mod gicv3;
     pub mod pl011;
 }
 mod fat32;
+mod vgic;
 mod vm;
 
 use crate::drivers::{gicv3, virtio_blk};
@@ -113,7 +115,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
     // 割り込みコントローラのセットアップ
     let distributor = init_gic_distributor(&dtb);
-    let _redistributor = init_gic_redistributor(&dtb);
+    let redistributor = init_gic_redistributor(&dtb);
 
     // PL011の割り込みのセットアップ
     enable_serial_port_interrupt(&PL011_DEVICE.lock(), &distributor);
@@ -137,7 +139,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     #[cfg(test)]
     test_main();
 
-    let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk);
+    let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk, &redistributor);
     log_info!("Booting VM...");
     crate::hal::HypervisorLevel::boot_vm(boot_address, argument)
 }

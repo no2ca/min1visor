@@ -1,9 +1,11 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
+use crate::drivers::gicv3::GicRedistributor;
 use crate::drivers::virtio_blk::VirtioBlk;
 use crate::fat32::Fat32;
+use crate::mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
-use crate::paging::*;
+use crate::{paging::*, vgic};
 
 use alloc::boxed::Box;
 use alloc::collections::linked_list::LinkedList;
@@ -25,6 +27,8 @@ pub struct VM {
     ram_physical_base_address: usize,
     ram_size: usize,
     mmio_handlers: LinkedList<MmioEntry>,
+    gic_distributor_mmio: *mut GicDistributorMmio,
+    gic_redistributor_mmio: *mut GicRedistributorMmio,
 }
 
 #[repr(C)]
@@ -51,6 +55,8 @@ impl VM {
         ram_physical_base_address: usize,
         ram_size: usize,
         mmio_handlers: LinkedList<MmioEntry>,
+        gic_distributor_mmio: *mut GicDistributorMmio,
+        gic_redistributor_mmio: *mut GicRedistributorMmio,
     ) -> Self {
         Self {
             vm_id,
@@ -58,6 +64,8 @@ impl VM {
             ram_physical_base_address,
             ram_size,
             mmio_handlers,
+            gic_distributor_mmio,
+            gic_redistributor_mmio,
         }
     }
 
@@ -95,6 +103,14 @@ impl VM {
             None
         }
     }
+
+    pub fn get_gic_distributor_mmio(&self) -> *mut GicDistributorMmio {
+        self.gic_distributor_mmio
+    }
+
+    pub fn get_gic_redistributor_mmio(&self) -> *mut GicRedistributorMmio {
+        self.gic_redistributor_mmio
+    }
 }
 
 impl MmioEntry {
@@ -107,7 +123,7 @@ impl MmioEntry {
     }
 }
 
-pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk) -> (usize, usize) {
+pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk, gic_redistributor: &GicRedistributor) -> (usize, usize) {
     const RAM_VIRTUAL_BASE: usize = 0x40000000;
     /// RAM SIZE: 256MiB
     const RAM_SIZE: usize = 0x10000000;
@@ -118,6 +134,7 @@ pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk) -> (usize, usize) {
         .expect("Failed to allocate memory for VM.");
     let vm_id = unsafe { NEXT_VM_ID };
     unsafe { NEXT_VM_ID += 1 };
+    let cpu_mpidr = crate::arch::aarch64::get_mpidr_el1();
 
     // 仮想化に関するハードウェアの設定
     // レジスタのセットアップ
@@ -127,6 +144,8 @@ pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk) -> (usize, usize) {
     init_stage2_translation_table();
     map_address_stage2(ram_physical_address, RAM_VIRTUAL_BASE, RAM_SIZE, true, true)
         .expect("Failed to map memory");
+
+    vgic::init_vgic(gic_redistributor);
 
     // MMIO ハンドラの初期化
     let mut mmio_handlers = LinkedList::new();
@@ -138,6 +157,24 @@ pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk) -> (usize, usize) {
         Box::new(Pl011Mmio::new()),
     ));
 
+    // GIC Distributor
+    let mut gic_distributor_mmio = Box::new(GicDistributorMmio::new());
+    let gic_distributor_mmio_ptr = gic_distributor_mmio.as_mut() as *mut _;
+    mmio_handlers.push_back(MmioEntry::new(
+        0x8000000,
+        GicDistributorMmio::MMIO_SIZE,
+        gic_distributor_mmio,
+    ));
+
+    // GIC Redistributor
+    let mut gic_redistributor_mmio = Box::new(GicRedistributorMmio::new(cpu_mpidr));
+    let gic_redistributor_mmio_ptr = gic_redistributor_mmio.as_mut() as *mut _;
+    mmio_handlers.push_back(MmioEntry::new(
+        0x80a0000,
+        GicRedistributorMmio::MMIO_SIZE,
+        gic_redistributor_mmio,
+    ));
+
     // VM構造体の作成
     let vm = VM::new(
         vm_id,
@@ -145,6 +182,8 @@ pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk) -> (usize, usize) {
         ram_physical_address,
         RAM_SIZE,
         mmio_handlers,
+        gic_distributor_mmio_ptr,
+        gic_redistributor_mmio_ptr,
     );
 
     // 仮想マシンのバイナリの読み込み
