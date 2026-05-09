@@ -19,6 +19,7 @@ extern crate alloc;
 
 mod dtb;
 mod drivers {
+    pub mod generic_timer;
     pub mod gicv3;
     pub mod pl011;
     pub mod virtio;
@@ -49,7 +50,7 @@ mod fat32;
 mod vgic;
 mod vm;
 
-use crate::drivers::{gicv3, virtio_blk};
+use crate::drivers::{generic_timer, gicv3, virtio_blk};
 use crate::{
     allocator::linked_list::LinkedListAllocator, hal::HypervisorControl, log::LogLevel,
     mutex::Mutex,
@@ -98,6 +99,13 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     };
     // ここより上はprintln!()などのシリアル通信を使用しない
 
+    log_info!("Hello from main!");
+
+    // 現在のELを表示
+    let currentel = crate::arch::aarch64::get_currentel() >> 2;
+    crate::log_info!("CurrentEL: {}", currentel);
+    assert_eq!(currentel, 2);
+
     // メモリ管理のセットアップ
     let elf_addr_str = unsafe { CStr::from_ptr(args[1]) }
         .to_str()
@@ -126,15 +134,11 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     // fat32のセットアップ
     let fat32 = init_fat32(&mut virtioblk);
 
-    // 現在のELを表示
-    let currentel = crate::arch::aarch64::get_currentel() >> 2;
-    crate::log_info!("CurrentEL: {}", currentel);
-    assert_eq!(currentel, 2);
-
     // hypervisorモードのセットアップ
     crate::hal::HypervisorLevel::setup_hypervisor();
 
-    log_info!("Hello from main!");
+    // Generic Timerの初期化
+    generic_timer::init_generic_timer_global(&dtb);
 
     #[cfg(test)]
     test_main();

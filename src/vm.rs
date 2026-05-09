@@ -1,5 +1,6 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
+use crate::drivers::generic_timer;
 use crate::drivers::gicv3::GicRedistributor;
 use crate::drivers::virtio_blk::VirtioBlk;
 use crate::fat32::Fat32;
@@ -123,7 +124,11 @@ impl MmioEntry {
     }
 }
 
-pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk, gic_redistributor: &GicRedistributor) -> (usize, usize) {
+pub fn create_vm(
+    fat32: &Fat32,
+    blk: &mut VirtioBlk,
+    gic_redistributor: &GicRedistributor,
+) -> (usize, usize) {
     const RAM_VIRTUAL_BASE: usize = 0x40000000;
     /// RAM SIZE: 256MiB
     const RAM_SIZE: usize = 0x10000000;
@@ -149,6 +154,9 @@ pub fn create_vm(fat32: &Fat32, blk: &mut VirtioBlk, gic_redistributor: &GicRedi
 
     // MMIO ハンドラの初期化
     let mut mmio_handlers = LinkedList::new();
+
+    // Generic Timerの初期化
+    generic_timer::init_generic_timer_local(gic_redistributor);
 
     // PL011
     mmio_handlers.push_back(MmioEntry::new(

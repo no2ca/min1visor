@@ -2,7 +2,13 @@
 //! 割り込み制御
 //!
 use crate::{
-    PL011_DEVICE, arch::aarch64::registers::*, drivers::gicv3::GicRedistributor, log_info, mmio::gicv3, serial::SerialDevice, vgic, vm
+    PL011_DEVICE,
+    arch::aarch64::registers::*,
+    drivers::{generic_timer, gicv3::GicRedistributor},
+    log_info,
+    mmio::gicv3,
+    serial::SerialDevice,
+    vgic, vm,
 };
 use core::arch::global_asm;
 
@@ -209,6 +215,12 @@ pub fn setup_exception() {
         static exception_table: *const u8;
     }
     unsafe { crate::arch::aarch64::set_vbar_el2(&exception_table as *const _ as usize as u64) };
+    // ICC_EOIR1_EL1の挙動を変更
+    unsafe {
+        crate::arch::aarch64::set_icc_ctlr_el1(
+            crate::arch::aarch64::get_icc_ctlr_el1() | ICC_CTLR1_EL1_EOI_MODE,
+        )
+    };
 }
 
 extern "C" fn synchronous_handler(registers: *mut Registers) {
@@ -265,6 +277,7 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 extern "C" fn irq_handler() {
     // 割り込み番号を取得
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
+    let mut deactivate = false;
     log_info!("Interrupt Number: {interrupt_number}");
     let pl011_int_id = PL011_DEVICE.lock().interrupt_number;
     if interrupt_number == pl011_int_id && interrupt_number == pl011_int_id {
@@ -274,7 +287,13 @@ extern "C" fn irq_handler() {
         vgic::maintenance_interrupt_handler();
     } else if interrupt_number == gicv3::INJECT_INTERRUPT_INT_ID {
         gicv3::inject_interrupt_handler();
+    } else if interrupt_number == *generic_timer::GENERIC_TIMER_PHYSICAL_INT_ID.lock() {
+        generic_timer::generic_timer_interrupt_handler();
+        deactivate = false;
     }
-    // 割り込み終了を通知
-    GicRedistributor::send_eoi(interrupt_number, group);
+    GicRedistributor::drop_priority(interrupt_number, group);
+    if deactivate {
+        // CPUに割り込みの終了を通知
+        GicRedistributor::deactivate(interrupt_number);
+    }
 }
