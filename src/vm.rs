@@ -1,12 +1,13 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
-use crate::drivers::generic_timer;
+use crate::drivers::{generic_timer, pl011};
 use crate::drivers::gicv3::GicRedistributor;
 use crate::drivers::virtio_blk::VirtioBlk;
 use crate::fat32::Fat32;
 use crate::mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
-use crate::{paging::*, vgic};
+use crate::serial::SerialDevice;
+use crate::{log_warn, paging::*, vgic};
 
 use alloc::boxed::Box;
 use alloc::collections::linked_list::LinkedList;
@@ -30,6 +31,7 @@ pub struct VM {
     mmio_handlers: LinkedList<MmioEntry>,
     gic_distributor_mmio: *mut GicDistributorMmio,
     gic_redistributor_mmio: *mut GicRedistributorMmio,
+    pl011_mmio: *mut Pl011Mmio,
 }
 
 #[repr(C)]
@@ -58,6 +60,7 @@ impl VM {
         mmio_handlers: LinkedList<MmioEntry>,
         gic_distributor_mmio: *mut GicDistributorMmio,
         gic_redistributor_mmio: *mut GicRedistributorMmio,
+        pl011_mmio: *mut Pl011Mmio,
     ) -> Self {
         Self {
             vm_id,
@@ -67,6 +70,7 @@ impl VM {
             mmio_handlers,
             gic_distributor_mmio,
             gic_redistributor_mmio,
+            pl011_mmio,
         }
     }
 
@@ -111,6 +115,10 @@ impl VM {
 
     pub fn get_gic_redistributor_mmio(&self) -> *mut GicRedistributorMmio {
         self.gic_redistributor_mmio
+    }
+    
+    pub fn get_pl011_mmio(&self) -> *mut Pl011Mmio {
+        self.pl011_mmio
     }
 }
 
@@ -159,10 +167,12 @@ pub fn create_vm(
     generic_timer::init_generic_timer_local(gic_redistributor);
 
     // PL011
+    let mut pl011_mmio = Box::new(Pl011Mmio::new());
+    let pl011_mmio_ptr = pl011_mmio.as_mut() as *mut _;
     mmio_handlers.push_back(MmioEntry::new(
         0x9000000,
         0x1000,
-        Box::new(Pl011Mmio::new()),
+        pl011_mmio,
     ));
 
     // GIC Distributor
@@ -192,6 +202,7 @@ pub fn create_vm(
         mmio_handlers,
         gic_distributor_mmio_ptr,
         gic_redistributor_mmio_ptr,
+        pl011_mmio_ptr,
     );
 
     // 仮想マシンのバイナリの読み込み
@@ -242,7 +253,25 @@ fn setup_hypervisor_registers() {
     unsafe { crate::arch::aarch64::set_hcr_el2(hcr_el2) };
 }
 
-/// 今は一つだけ
+pub fn input_uart(device: &dyn SerialDevice) {
+    let c = device.getc();
+    if c.is_err() {
+        log_warn!("Failed to get a character");
+        return;
+    }
+    let c = c.unwrap().unwrap_or(0);
+    if c == 0 {
+        return;
+    }
+    
+    let vm = get_active_vm();
+    unsafe { (*vm.get_pl011_mmio()).push(c, &mut *vm.get_gic_distributor_mmio()) };
+}
+
 pub fn get_current_vm() -> &'static mut VM {
+    unsafe { (&raw mut VM_LIST).as_mut().unwrap().front_mut().unwrap() }
+}
+
+pub fn get_active_vm() -> &'static mut VM {
     unsafe { (&raw mut VM_LIST).as_mut().unwrap().front_mut().unwrap() }
 }

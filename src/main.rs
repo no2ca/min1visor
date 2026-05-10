@@ -334,7 +334,6 @@ pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) -> fat32::Fat32 {
     };
     let mut fat32 = Err(());
     for entry in partition_table {
-        log_debug!("{:#?}", entry);
         if entry.partition_type == 0x0C {
             fat32 = fat32::Fat32::new(blk, entry.first_sector_lba as usize, 512);
             break;

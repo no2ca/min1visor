@@ -2,7 +2,13 @@
 //! 割り込み制御
 //!
 use crate::{
-    PL011_DEVICE, arch::aarch64::registers::*, drivers::{generic_timer, gicv3::GicRedistributor}, log_debug, log_info, mmio::gicv3, serial::SerialDevice, vgic, vm
+    PL011_DEVICE,
+    arch::aarch64::registers::*,
+    drivers::{generic_timer, gicv3::GicRedistributor},
+    log_debug, log_info,
+    mmio::gicv3,
+    serial::SerialDevice,
+    vgic, vm,
 };
 use core::arch::global_asm;
 
@@ -272,13 +278,9 @@ extern "C" fn irq_handler() {
     // 割り込み番号を取得
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
     let mut deactivate = false;
-    if interrupt_number != *generic_timer::GENERIC_TIMER_PHYSICAL_INT_ID.lock() {
-        log_debug!("Interrupt Number: {interrupt_number}");
-    }
     let pl011_int_id = PL011_DEVICE.lock().interrupt_number;
     if interrupt_number == pl011_int_id {
-        let c = PL011_DEVICE.lock().getc().unwrap().unwrap();
-        crate::println!("PL011: {}", c as char);
+        vm::input_uart(&*crate::PL011_DEVICE.lock());
     } else if interrupt_number == vgic::MAINTENANCE_INTERRUPT_INTID {
         vgic::maintenance_interrupt_handler();
     } else if interrupt_number == gicv3::INJECT_INTERRUPT_INT_ID {
