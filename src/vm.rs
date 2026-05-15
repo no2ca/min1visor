@@ -1,11 +1,12 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
-use crate::drivers::{generic_timer, pl011};
 use crate::drivers::gicv3::GicRedistributor;
 use crate::drivers::virtio_blk::VirtioBlk;
+use crate::drivers::{generic_timer, pl011};
 use crate::fat32::Fat32;
 use crate::mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
+use crate::mmio::virtio_blk::VirtioBlkMmio;
 use crate::serial::SerialDevice;
 use crate::{log_warn, paging::*, vgic};
 
@@ -116,7 +117,7 @@ impl VM {
     pub fn get_gic_redistributor_mmio(&self) -> *mut GicRedistributorMmio {
         self.gic_redistributor_mmio
     }
-    
+
     pub fn get_pl011_mmio(&self) -> *mut Pl011Mmio {
         self.pl011_mmio
     }
@@ -169,10 +170,17 @@ pub fn create_vm(
     // PL011
     let mut pl011_mmio = Box::new(Pl011Mmio::new());
     let pl011_mmio_ptr = pl011_mmio.as_mut() as *mut _;
+    mmio_handlers.push_back(MmioEntry::new(0x9000000, 0x1000, pl011_mmio));
+
+    // virtio-blk
+    let file_name = [b'D', b'I', b'S', b'K', b'0' + vm_id as u8];
+    let disk_file = fat32
+        .search_file(core::str::from_utf8(&file_name).unwrap())
+        .expect("Failed to find Disk");
     mmio_handlers.push_back(MmioEntry::new(
-        0x9000000,
-        0x1000,
-        pl011_mmio,
+        0xa000000,
+        0x0200,
+        Box::new(VirtioBlkMmio::new(disk_file)),
     ));
 
     // GIC Distributor
@@ -263,7 +271,7 @@ pub fn input_uart(device: &dyn SerialDevice) {
     if c == 0 {
         return;
     }
-    
+
     let vm = get_active_vm();
     unsafe { (*vm.get_pl011_mmio()).push(c, &mut *vm.get_gic_distributor_mmio()) };
 }

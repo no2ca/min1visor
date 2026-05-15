@@ -45,6 +45,7 @@ mod paging;
 mod mmio {
     pub mod gicv3;
     pub mod pl011;
+    pub mod virtio_blk;
 }
 mod fat32;
 mod vgic;
@@ -56,6 +57,7 @@ use crate::{
     mutex::Mutex,
 };
 use core::alloc::{GlobalAlloc, Layout};
+use core::mem::MaybeUninit;
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
 use core::sync::atomic::AtomicU8;
@@ -64,6 +66,8 @@ use core::{ffi::CStr, slice};
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Debug as u8);
 static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::invalid());
 static ALLOCATOR: Mutex<LinkedListAllocator> = Mutex::new(LinkedListAllocator::new());
+static mut VIRTIO_BLK: MaybeUninit<virtio_blk::VirtioBlk> = MaybeUninit::uninit();
+static mut FAT32: MaybeUninit<fat32::Fat32> = MaybeUninit::uninit();
 
 struct GlobalAllocator {}
 #[global_allocator]
@@ -144,6 +148,12 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     test_main();
 
     let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk, &redistributor);
+
+    unsafe {
+        VIRTIO_BLK = MaybeUninit::new(virtioblk);
+        FAT32 = MaybeUninit::new(fat32);
+    }
+
     log_info!("Booting VM...");
     crate::hal::HypervisorLevel::boot_vm(boot_address, argument)
 }

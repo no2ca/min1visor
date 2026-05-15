@@ -22,7 +22,6 @@ const UART_PCELL_ID1: usize = 0xFF4;
 const UART_PCELL_ID2: usize = 0xFF8;
 const UART_PCELL_ID3: usize = 0xFFC;
 
-
 /// RX FIFO が空か示すビット
 const UART_FR_RXFE: u16 = 1 << 4;
 /// 受信割り込みが有効か示すビット
@@ -50,7 +49,7 @@ impl Pl011Mmio {
             read_buffer: [0; 4],
         }
     }
-    
+
     pub fn push(&mut self, data: u8, distributor: &mut GicDistributorMmio) {
         for c in &mut self.read_buffer {
             if *c == 0 {
