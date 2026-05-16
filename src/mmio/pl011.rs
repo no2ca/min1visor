@@ -3,7 +3,7 @@
 //!
 
 use crate::mmio::gicv3::GicDistributorMmio;
-use crate::{mutex, print};
+use crate::print;
 
 use crate::vm::MmioHandler;
 
@@ -134,6 +134,9 @@ impl MmioHandler for Pl011Mmio {
             }
             UART_IMSC => {
                 self.interrupt_mask = value as u16;
+            }
+            UART_ICR => {
+                self.raw_interrupt_status &= !(value as u16);
             }
             _ => { /* unimplemented */ }
         }

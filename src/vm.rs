@@ -2,13 +2,13 @@ use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
 use crate::drivers::gicv3::GicRedistributor;
 use crate::drivers::virtio_blk::VirtioBlk;
-use crate::drivers::{generic_timer, pl011};
+use crate::drivers::generic_timer;
 use crate::fat32::Fat32;
 use crate::mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
 use crate::mmio::virtio_blk::VirtioBlkMmio;
 use crate::serial::SerialDevice;
-use crate::{log_warn, paging::*, vgic};
+use crate::{PL011_DEVICE, log_warn, paging::*, vgic};
 
 use alloc::boxed::Box;
 use alloc::collections::linked_list::LinkedList;
@@ -261,8 +261,8 @@ fn setup_hypervisor_registers() {
     unsafe { crate::arch::aarch64::set_hcr_el2(hcr_el2) };
 }
 
-pub fn input_uart(device: &dyn SerialDevice) {
-    let c = device.getc();
+pub fn input_uart() {
+    let c = (*&PL011_DEVICE.lock()).getc();
     if c.is_err() {
         log_warn!("Failed to get a character");
         return;

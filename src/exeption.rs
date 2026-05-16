@@ -5,9 +5,7 @@ use crate::{
     PL011_DEVICE,
     arch::aarch64::registers::*,
     drivers::{generic_timer, gicv3::GicRedistributor},
-    log_debug, log_info,
     mmio::gicv3,
-    serial::SerialDevice,
     vgic, vm,
 };
 use core::arch::global_asm;
@@ -277,10 +275,10 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 extern "C" fn irq_handler() {
     // 割り込み番号を取得
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
-    let mut deactivate = false;
-    let pl011_int_id = PL011_DEVICE.lock().interrupt_number;
+    let mut deactivate = true;
+    let pl011_int_id = (*PL011_DEVICE.lock()).interrupt_number;
     if interrupt_number == pl011_int_id {
-        vm::input_uart(&*crate::PL011_DEVICE.lock());
+        vm::input_uart();
     } else if interrupt_number == vgic::MAINTENANCE_INTERRUPT_INTID {
         vgic::maintenance_interrupt_handler();
     } else if interrupt_number == gicv3::INJECT_INTERRUPT_INT_ID {

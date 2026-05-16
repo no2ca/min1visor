@@ -1,7 +1,7 @@
 //!
 //! Arm PL011のデバイスドライバ
 //!
-use crate::serial;
+use crate::{log_debug, serial};
 
 use core::fmt::Error;
 use core::ptr;
@@ -87,8 +87,11 @@ impl serial::SerialDevice for Pl011 {
         if self.is_rx_fifo_empty() {
             return Ok(None);
         }
-        Ok(Some(unsafe {
+        let c = unsafe { ptr::read_volatile((self.base_address + UART_DR) as *const u8) };
+        Ok(Some(
+            c
+        /* unsafe {
             ptr::read_volatile((self.base_address + UART_DR) as *const u8)
-        }))
+        } */))
     }
 }
