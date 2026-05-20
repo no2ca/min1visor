@@ -1,7 +1,7 @@
 use crate::arch::aarch64;
 use crate::drivers::gicv3::{GicGroup, GicRedistributor};
 use crate::mmio::gicv3::INJECT_INTERRUPT_INT_ID;
-use crate::{log_debug, log_warn, vm};
+use crate::{log_warn, vm};
 
 /// 推奨されている値である25を使用している
 /// Device Treeから取得することも可能

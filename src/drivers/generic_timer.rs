@@ -1,4 +1,4 @@
-use crate::{drivers::gicv3, dtb, log_debug, mutex::Mutex, vm};
+use crate::{drivers::gicv3, dtb, mutex::Mutex, vm};
 
 pub static GENERIC_TIMER_PHYSICAL_INT_ID: Mutex<u32> = Mutex::new(0);
 const GENERIC_TIMER_VIRTUAL_INT_ID: u32 = 27;

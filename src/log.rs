@@ -13,6 +13,7 @@ pub enum LogLevel {
 }
 
 #[inline]
+#[allow(unused)]
 pub fn set_log_level(level: LogLevel) {
     LOG_LEVEL.store(level as u8, Ordering::Relaxed);
 }

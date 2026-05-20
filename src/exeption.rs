@@ -276,7 +276,7 @@ extern "C" fn irq_handler() {
     // 割り込み番号を取得
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
     let mut deactivate = true;
-    let pl011_int_id = (*PL011_DEVICE.lock()).interrupt_number;
+    let pl011_int_id = (PL011_DEVICE.lock()).interrupt_number;
     if interrupt_number == pl011_int_id {
         vm::input_uart();
     } else if interrupt_number == vgic::MAINTENANCE_INTERRUPT_INTID {

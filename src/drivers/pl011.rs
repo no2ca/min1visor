@@ -1,7 +1,7 @@
 //!
 //! Arm PL011のデバイスドライバ
 //!
-use crate::{log_debug, serial};
+use crate::serial;
 
 use core::fmt::Error;
 use core::ptr;

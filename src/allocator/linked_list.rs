@@ -120,6 +120,7 @@ impl LinkedListAllocator {
         }
     }
 
+    #[allow(unused)]
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, size: usize) {
         unsafe {
             self.dealloc_aligned(ptr, size, 1);

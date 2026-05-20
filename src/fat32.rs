@@ -99,7 +99,7 @@ impl Fat32 {
         let fat_size = (fat_sectors as usize) * (bytes_per_sector as usize);
         let lba_aligned_fat_size = ((fat_size - 1) & (!(lba_size - 1))) + lba_size;
         // FATを読み込むためのメモリ領域を確保
-        let fat = allocate_pages(
+       let fat = allocate_pages(
             (lba_aligned_fat_size >> PAGE_SHIFT) + 1,
             lba_size.ilog2() as usize,
         )

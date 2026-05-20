@@ -25,7 +25,7 @@ pub struct MmioEntry {
 }
 
 pub struct VM {
-    vm_id: usize,
+    _vm_id: usize,
     ram_virtual_base_address: usize,
     ram_physical_base_address: usize,
     ram_size: usize,
@@ -53,8 +53,9 @@ static mut VM_LIST: LinkedList<VM> = LinkedList::new();
 static mut NEXT_VM_ID: usize = 0;
 
 impl VM {
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
-        vm_id: usize,
+        _vm_id: usize,
         ram_virtual_base_address: usize,
         ram_physical_base_address: usize,
         ram_size: usize,
@@ -64,7 +65,7 @@ impl VM {
         pl011_mmio: *mut Pl011Mmio,
     ) -> Self {
         Self {
-            vm_id,
+            _vm_id,
             ram_virtual_base_address,
             ram_physical_base_address,
             ram_size,
@@ -262,7 +263,7 @@ fn setup_hypervisor_registers() {
 }
 
 pub fn input_uart() {
-    let c = (*&PL011_DEVICE.lock()).getc();
+    let c = (PL011_DEVICE.lock()).getc();
     if c.is_err() {
         log_warn!("Failed to get a character");
         return;
