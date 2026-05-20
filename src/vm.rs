@@ -7,6 +7,7 @@ use crate::fat32::Fat32;
 use crate::mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
 use crate::mmio::virtio_blk::VirtioBlkMmio;
+use crate::mutex::Mutex;
 use crate::serial::SerialDevice;
 use crate::{PL011_DEVICE, log_warn, paging::*, vgic};
 
@@ -49,8 +50,52 @@ struct KernelHeader {
     res5: u32,
 }
 
-static mut VM_LIST: LinkedList<VM> = LinkedList::new();
-static mut NEXT_VM_ID: usize = 0;
+pub struct VmManager {
+    next_vm_id: usize,
+    vm_list: LinkedList<VM>,
+    active_vm_id: Option<usize>,
+}
+
+static VM_MANAGER: Mutex<VmManager> = Mutex::new(VmManager::new());
+
+unsafe impl Send for VmManager {}
+
+impl VmManager {
+    const fn new() -> Self {
+        Self {
+            next_vm_id: 0,
+            vm_list: LinkedList::new(),
+            active_vm_id: None,
+        }
+    }
+
+    fn allocate_vm_id(&mut self) -> usize {
+        let vm_id = self.next_vm_id;
+        self.next_vm_id += 1;
+        vm_id
+    }
+
+    fn push_vm(&mut self, vm: VM) {
+        if self.active_vm_id.is_none() {
+            self.active_vm_id = Some(vm._vm_id);
+        }
+        self.vm_list.push_back(vm);
+    }
+
+    fn current_vm_mut(&mut self) -> Option<&mut VM> {
+        match self.active_vm_id {
+            Some(active_vm_id) => self
+                .vm_list
+                .iter_mut()
+                .find(|vm| vm._vm_id == active_vm_id),
+            None => self.vm_list.front_mut(),
+        }
+    }
+
+    fn active_vm_mut(&mut self) -> Option<&mut VM> {
+        self.current_vm_mut()
+    }
+}
 
 impl VM {
     #[allow(clippy::too_many_arguments)]
@@ -147,8 +192,7 @@ pub fn create_vm(
     // 仮想マシンの基本要素の設定
     let ram_physical_address = allocate_pages(RAM_SIZE >> PAGE_SHIFT, PAGE_SHIFT)
         .expect("Failed to allocate memory for VM.");
-    let vm_id = unsafe { NEXT_VM_ID };
-    unsafe { NEXT_VM_ID += 1 };
+    let vm_id = VM_MANAGER.lock().allocate_vm_id();
     let cpu_mpidr = crate::arch::aarch64::get_mpidr_el1();
 
     // 仮想化に関するハードウェアの設定
@@ -242,7 +286,7 @@ pub fn create_vm(
     }
 
     // VM構造体のリストへの追加
-    unsafe { (&raw mut VM_LIST).as_mut().unwrap().push_back(vm) };
+    VM_MANAGER.lock().push_vm(vm);
 
     (
         kernel_virtual_address + text_offset as usize,
@@ -278,9 +322,13 @@ pub fn input_uart() {
 }
 
 pub fn get_current_vm() -> &'static mut VM {
-    unsafe { (&raw mut VM_LIST).as_mut().unwrap().front_mut().unwrap() }
+    let mut manager = VM_MANAGER.lock();
+    let vm = manager.current_vm_mut().unwrap() as *mut VM;
+    unsafe { &mut *vm }
 }
 
 pub fn get_active_vm() -> &'static mut VM {
-    unsafe { (&raw mut VM_LIST).as_mut().unwrap().front_mut().unwrap() }
+    let mut manager = VM_MANAGER.lock();
+    let vm = manager.active_vm_mut().unwrap() as *mut VM;
+    unsafe { &mut *vm }
 }
