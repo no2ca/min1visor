@@ -187,6 +187,21 @@ fn linked_list_dealloc_makes_region_reusable() {
 }
 
 #[test_case]
+fn linked_list_dealloc_aligned_reuses_high_aligned_region() {
+    let mut allocator = make_allocator_with_test_heap();
+
+    let ptr = unsafe { allocator.alloc(0x20, 0x1000) };
+    assert_eq!(ptr as usize, TEST_HEAP_START);
+
+    unsafe {
+        allocator.dealloc_aligned(ptr, 0x20, 0x1000);
+    }
+
+    let reused = unsafe { allocator.alloc(0x20, 0x1000) };
+    assert_eq!(reused as usize, TEST_HEAP_START);
+}
+
+#[test_case]
 fn virtio_mmio_register_offsets_match_expected_values() {
     assert_eq!(VIRTIO_MMIO_MAGIC, 0x000);
     assert_eq!(VIRTIO_MMIO_DEVICE_ID, 0x008);

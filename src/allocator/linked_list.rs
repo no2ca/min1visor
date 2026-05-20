@@ -1,6 +1,6 @@
 use core::ptr;
 
-use crate::{ALLOCATOR, paging};
+use crate::{paging, ALLOCATOR};
 
 #[derive(Debug)]
 pub struct ListNode {
@@ -149,5 +149,15 @@ pub fn allocate_pages(number_of_pages: usize, align_order: usize) -> Result<usiz
         Err(())
     } else {
         Ok(ptr as usize)
+    }
+}
+
+pub fn free_pages(address: usize, number_of_pages: usize) {
+    unsafe {
+        ALLOCATOR.lock().dealloc_aligned(
+            address as *mut u8,
+            number_of_pages << paging::PAGE_SHIFT,
+            paging::PAGE_SIZE,
+        );
     }
 }

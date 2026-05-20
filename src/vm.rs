@@ -1,15 +1,15 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
+use crate::drivers::generic_timer;
 use crate::drivers::gicv3::GicRedistributor;
 use crate::drivers::virtio_blk::VirtioBlk;
-use crate::drivers::generic_timer;
 use crate::fat32::Fat32;
 use crate::mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
 use crate::mmio::virtio_blk::VirtioBlkMmio;
 use crate::mutex::Mutex;
 use crate::serial::SerialDevice;
-use crate::{PL011_DEVICE, log_warn, paging::*, vgic};
+use crate::{log_warn, paging::*, vgic, PL011_DEVICE};
 
 use alloc::boxed::Box;
 use alloc::collections::linked_list::LinkedList;
@@ -84,10 +84,7 @@ impl VmManager {
 
     fn current_vm_mut(&mut self) -> Option<&mut VM> {
         match self.active_vm_id {
-            Some(active_vm_id) => self
-                .vm_list
-                .iter_mut()
-                .find(|vm| vm._vm_id == active_vm_id),
+            Some(active_vm_id) => self.vm_list.iter_mut().find(|vm| vm._vm_id == active_vm_id),
             None => self.vm_list.front_mut(),
         }
     }

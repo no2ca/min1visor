@@ -1,4 +1,4 @@
-use crate::allocator::linked_list::allocate_pages;
+use crate::allocator::linked_list::{allocate_pages, free_pages};
 use crate::drivers::virtio_blk::VirtioBlk;
 use crate::paging::PAGE_SHIFT;
 use crate::{log_debug, log_info, log_warn};
@@ -99,27 +99,30 @@ impl Fat32 {
         let fat_size = (fat_sectors as usize) * (bytes_per_sector as usize);
         let lba_aligned_fat_size = ((fat_size - 1) & (!(lba_size - 1))) + lba_size;
         // FATを読み込むためのメモリ領域を確保
-       let fat = allocate_pages(
-            (lba_aligned_fat_size >> PAGE_SHIFT) + 1,
-            lba_size.ilog2() as usize,
-        )
-        .expect("Failed to allocate memory");
+        let fat_pages = (lba_aligned_fat_size >> PAGE_SHIFT) + 1;
+        let fat = allocate_pages(fat_pages, lba_size.ilog2() as usize)
+            .expect("Failed to allocate memory");
         let fat_address =
             ((base_lba * lba_size) as u64) + (reserved_sectors as u64) * (bytes_per_sector as u64);
         if blk
             .read(fat, fat_address, lba_aligned_fat_size as u64)
             .is_err()
         {
-            // TODO: free_pages()を実装する
-            // free_pages(fat, (lba_aligned_fat_size >> PAGE_SHIFT) + 1);
+            free_pages(fat, fat_pages);
             return Err(());
         }
 
         // ルートディレクトリリストの読み込み
         let root_directory_pages =
             (((sectors_per_cluster as usize) * (bytes_per_sector as usize)) >> PAGE_SHIFT) + 1;
-        let root_directory_list = allocate_pages(root_directory_pages, lba_size.ilog2() as usize)
-            .expect("Failed to allocate memory");
+        let root_directory_list =
+            match allocate_pages(root_directory_pages, lba_size.ilog2() as usize) {
+                Ok(address) => address,
+                Err(()) => {
+                    free_pages(fat, fat_pages);
+                    return Err(());
+                }
+            };
 
         let fat32 = Fat32 {
             base_lba,
@@ -143,7 +146,8 @@ impl Fat32 {
             )
             .is_err()
         {
-            // TODO: free_pages()
+            free_pages(root_directory_list, root_directory_pages);
+            free_pages(fat, fat_pages);
             return Err(());
         }
         Ok(fat32)
@@ -384,19 +388,19 @@ impl Fat32 {
             let aligned_buffer_size = (((sectors as usize) * (self.bytes_per_sector as usize))
                 & (!(self.lba_size - 1)))
                 + self.lba_size;
+            let buffer_pages = (aligned_buffer_size >> PAGE_SHIFT) + 1;
             // Offsetがある場合は先に別のページに読み込んで, あとからoffsetをつけてコピーする
             let buffer = if data_offset != 0 {
-                allocate_pages((aligned_buffer_size >> PAGE_SHIFT) + 1, 0).or(Err(()))?
+                allocate_pages(buffer_pages, 0).or(Err(()))?
             } else {
                 buffer_address + buffer_pointer
             };
 
             let sector = self.cluster_to_sector(first_cluster) + sector_offset;
             if self.read_sectors(blk, buffer, sector, sectors).is_err() {
-                // TODO:
-                // if data_offset != 0 {
-                //     free_pages(buffer, (aligned_buffer_size >> PAGE_SHIFT) + 1);
-                // }
+                if data_offset != 0 {
+                    free_pages(buffer, buffer_pages);
+                }
                 return Err(());
             };
             if data_offset != 0 {
@@ -408,8 +412,7 @@ impl Fat32 {
                         read_bytes,
                     )
                 };
-                // TODO:
-                // free_pages(buffer, (aligned_buffer_size >> PAGE_SHIFT) + 1);
+                free_pages(buffer, buffer_pages);
                 data_offset = 0;
             }
             buffer_pointer += read_bytes;
