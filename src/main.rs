@@ -35,7 +35,6 @@ mod tests {
 mod arch {
     pub mod aarch64;
 }
-mod hal;
 mod allocator {
     pub mod linked_list;
 }
@@ -52,10 +51,7 @@ mod vgic;
 mod vm;
 
 use crate::drivers::{generic_timer, gicv3, virtio_blk};
-use crate::{
-    allocator::linked_list::LinkedListAllocator, hal::HypervisorControl, log::LogLevel,
-    mutex::Mutex,
-};
+use crate::{allocator::linked_list::LinkedListAllocator, log::LogLevel, mutex::Mutex};
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::MaybeUninit;
 #[allow(unused_imports)]
@@ -139,7 +135,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     let fat32 = init_fat32(&mut virtioblk);
 
     // hypervisorモードのセットアップ
-    crate::hal::HypervisorLevel::setup_hypervisor();
+    crate::arch::aarch64::AArch64Hypervisor::setup_hypervisor();
 
     // Generic Timerの初期化
     generic_timer::init_generic_timer_global(&dtb);
@@ -155,7 +151,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     }
 
     log_info!("Booting VM...");
-    crate::hal::HypervisorLevel::boot_vm(boot_address, argument)
+    crate::arch::aarch64::AArch64Hypervisor::boot_vm(boot_address, argument)
 }
 
 fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {

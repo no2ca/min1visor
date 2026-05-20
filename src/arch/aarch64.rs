@@ -1,4 +1,4 @@
-use crate::{allocator::linked_list::allocate_pages, hal, paging};
+use crate::{allocator::linked_list::allocate_pages, paging};
 use core::arch::asm;
 
 pub mod registers {
@@ -56,11 +56,11 @@ use self::registers::*;
 
 pub struct AArch64Interrupts;
 
-impl hal::InterruptControl for AArch64Interrupts {
-    unsafe fn disable_interrupts() -> u64 {
+impl AArch64Interrupts {
+    pub unsafe fn disable_interrupts() -> u64 {
         unsafe { get_daif_and_disable_irq_fiq() }
     }
-    unsafe fn restore_interrupts(state: u64) {
+    pub unsafe fn restore_interrupts(state: u64) {
         unsafe {
             set_daif(state);
         }
@@ -69,14 +69,14 @@ impl hal::InterruptControl for AArch64Interrupts {
 
 pub struct AArch64Hypervisor;
 
-impl hal::HypervisorControl for AArch64Hypervisor {
-    fn setup_hypervisor() {
+impl AArch64Hypervisor {
+    pub fn setup_hypervisor() {
         // RWはEL1でAArch64として動作させるためのメンバ
         let hcr_el2 =
             HCR_EL2_RW | HCR_EL2_API | HCR_EL2_AMO | HCR_EL2_IMO | HCR_EL2_FMO | HCR_EL2_VM;
         unsafe { set_hcr_el2(hcr_el2) };
     }
-    fn boot_vm(entry_point: usize, argument: usize) -> ! {
+    pub fn boot_vm(entry_point: usize, argument: usize) -> ! {
         unsafe {
             set_spsr_el2(SPSR_EL2_M_EL1H);
             set_elr_el2(entry_point as u64);
