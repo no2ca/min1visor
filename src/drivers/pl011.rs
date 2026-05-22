@@ -89,9 +89,9 @@ impl serial::SerialDevice for Pl011 {
         }
         let c = unsafe { ptr::read_volatile((self.base_address + UART_DR) as *const u8) };
         Ok(Some(
-            c
-        /* unsafe {
-            ptr::read_volatile((self.base_address + UART_DR) as *const u8)
-        } */))
+            c, /* unsafe {
+                  ptr::read_volatile((self.base_address + UART_DR) as *const u8)
+              } */
+        ))
     }
 }

@@ -30,8 +30,12 @@ pushd "$SRC_DIR" >/dev/null
 
 # カーネル設定の修正 (CONFIG_BLK_DEV_INITRD=y の追加)
 echo "Adding CONFIG_BLK_DEV_INITRD=y to kernel config..."
-# 設定ファイルの末尾に追記します
+# 設定ファイルの末尾に追記する
+# Initramfsの使用を可能にする
 echo "CONFIG_BLK_DEV_INITRD=y" >> board/qemu/aarch64-virt/linux.config
+# devtmpfs（デバイス自動作成機能）とその自動マウントを有効にする
+echo "CONFIG_DEVTMPFS=y" >> board/qemu/aarch64-virt/linux.config
+echo "CONFIG_DEVTMPFS_MOUNT=y" >> board/qemu/aarch64-virt/linux.config
 
 export FORCE_UNSAFE_CONFIGURE=1
 

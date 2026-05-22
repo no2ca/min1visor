@@ -261,7 +261,8 @@ pub fn create_vm(
     // TODO: オーバーラップやサイズの超過を検証する
     let kernel = fat32.search_file("IMAGE").unwrap();
     let dtb = fat32.search_file("DTB").unwrap();
-    let initramfs = fat32.search_file("RAMFS.GZ").unwrap();
+    // let initramfs = fat32.search_file("RAMFS.GZ").unwrap();
+    let initramfs = fat32.search_file("ROOTFS").unwrap();
     let kernel_size = kernel.get_file_size();
     let dtb_size = dtb.get_file_size();
     let initramfs_size = initramfs.get_file_size();

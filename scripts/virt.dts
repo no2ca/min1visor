@@ -62,9 +62,9 @@
 
 	chosen {
 		stdout-path = "/pl011@9000000";
-		bootargs = "earlycon=pl011,0x9000000 console=ttyAMA0 rdinit=/linuxrc";
+		// bootargs = "earlycon=pl011,0x9000000 console=ttyAMA0 root=/dev/vda";
+		bootargs = "earlycon=pl011,0x9000000 console=ttyAMA0 rdinit=/init";
 		linux,initrd-start = <0x0 0x48000000>;
-		linux,initrd-end   = <0x0 0x481DFEF4>;  /* 0x48000000 + 0x1DFEF4 */
-		/* bootargs = "earlycon=pl011,0x9000000 console=ttyAMA0 root=/dev/vda"; */
+		linux,initrd-end   = <0x0 0x483ED200>;  /* 0x48000000 + 0x3ED200 */
 	};
 };

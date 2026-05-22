@@ -1,6 +1,6 @@
 use core::ptr;
 
-use crate::{paging, ALLOCATOR};
+use crate::{ALLOCATOR, paging};
 
 #[derive(Debug)]
 pub struct ListNode {
