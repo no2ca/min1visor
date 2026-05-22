@@ -9,7 +9,7 @@ use crate::mmio::pl011::Pl011Mmio;
 use crate::mmio::virtio_blk::VirtioBlkMmio;
 use crate::mutex::Mutex;
 use crate::serial::SerialDevice;
-use crate::{log_warn, paging::*, vgic, PL011_DEVICE};
+use crate::{PL011_DEVICE, log_debug, log_warn, paging::*, vgic};
 
 use alloc::boxed::Box;
 use alloc::collections::linked_list::LinkedList;
@@ -182,6 +182,8 @@ pub fn create_vm(
     gic_redistributor: &GicRedistributor,
 ) -> (usize, usize) {
     const RAM_VIRTUAL_BASE: usize = 0x40000000;
+    // BASE + 128MiB
+    const INITRAMFS_VIRTUAL_BASE: usize = 0x48000000;
     /// RAM SIZE: 256MiB
     const RAM_SIZE: usize = 0x10000000;
     const ALIGN_SIZE: usize = 0x200000;
@@ -256,13 +258,37 @@ pub fn create_vm(
     );
 
     // 仮想マシンのバイナリの読み込み
+    // TODO: オーバーラップやサイズの超過を検証する
     let kernel = fat32.search_file("IMAGE").unwrap();
     let dtb = fat32.search_file("DTB").unwrap();
-    let dtb_size = dtb.get_file_size();
+    let initramfs = fat32.search_file("RAMFS.GZ").unwrap();
     let kernel_size = kernel.get_file_size();
+    let dtb_size = dtb.get_file_size();
+    let initramfs_size = initramfs.get_file_size();
     let kernel_virtual_address =
         ((RAM_VIRTUAL_BASE + dtb_size - 1) & !(ALIGN_SIZE - 1)) + ALIGN_SIZE;
+    let initramfs_virtual_address = INITRAMFS_VIRTUAL_BASE;
     let kernel_physical_address = vm.get_physical_address(kernel_virtual_address).unwrap();
+    let initramfs_physical_address = vm.get_physical_address(initramfs_virtual_address).unwrap();
+
+    log_debug!(
+        "DTB\tsize=0x{:X} placed at virt=0x{:X}, phys=0x{:X}",
+        dtb_size,
+        RAM_VIRTUAL_BASE,
+        ram_physical_address
+    );
+    log_debug!(
+        "Kernel\tsize=0x{:X} placed at virt=0x{:X}, phys=0x{:X}",
+        kernel_size,
+        kernel_virtual_address,
+        kernel_physical_address
+    );
+    log_debug!(
+        "Initramfs\tsize=0x{:X} placed at virt=0x{:X}, phys=0x{:X}",
+        initramfs_size,
+        initramfs_virtual_address,
+        initramfs_physical_address
+    );
 
     fat32
         .read(&dtb, blk, ram_physical_address, 0, dtb_size)
@@ -270,6 +296,15 @@ pub fn create_vm(
     fat32
         .read(&kernel, blk, kernel_physical_address, 0, kernel_size)
         .expect("Failed to read Kernel");
+    fat32
+        .read(
+            &initramfs,
+            blk,
+            initramfs_physical_address,
+            0,
+            initramfs_size,
+        )
+        .expect("Failed to read Initramfs");
 
     // Linux Kernel Headerの解析
     let header = unsafe { &*(kernel_physical_address as *const KernelHeader) };
