@@ -258,7 +258,6 @@ pub fn create_vm(
     );
 
     // 仮想マシンのバイナリの読み込み
-    // TODO: オーバーラップやサイズの超過を検証する
     let kernel = fat32.search_file("IMAGE").unwrap();
     let dtb = fat32.search_file("DTB").unwrap();
     // let initramfs = fat32.search_file("RAMFS.GZ").unwrap();
@@ -269,6 +268,38 @@ pub fn create_vm(
     let kernel_virtual_address =
         ((RAM_VIRTUAL_BASE + dtb_size - 1) & !(ALIGN_SIZE - 1)) + ALIGN_SIZE;
     let initramfs_virtual_address = INITRAMFS_VIRTUAL_BASE;
+    let ram_end = RAM_VIRTUAL_BASE
+        .checked_add(RAM_SIZE)
+        .expect("RAM address range overflow");
+    let dtb_end = RAM_VIRTUAL_BASE
+        .checked_add(dtb_size)
+        .expect("DTB address range overflow");
+    let kernel_end = kernel_virtual_address
+        .checked_add(kernel_size)
+        .expect("Kernel address range overflow");
+    let initramfs_end = initramfs_virtual_address
+        .checked_add(initramfs_size)
+        .expect("Initramfs address range overflow");
+
+    if dtb_end > ram_end {
+        panic!("DTB exceeds RAM size");
+    }
+    if kernel_end > ram_end {
+        panic!("Kernel exceeds RAM size");
+    }
+    if initramfs_end > ram_end {
+        panic!("Initramfs exceeds RAM size");
+    }
+    if RAM_VIRTUAL_BASE < kernel_end && kernel_virtual_address < dtb_end {
+        panic!("DTB overlaps Kernel");
+    }
+    if RAM_VIRTUAL_BASE < initramfs_end && initramfs_virtual_address < dtb_end {
+        panic!("DTB overlaps Initramfs");
+    }
+    if kernel_virtual_address < initramfs_end && initramfs_virtual_address < kernel_end {
+        panic!("Kernel overlaps Initramfs");
+    }
+
     let kernel_physical_address = vm.get_physical_address(kernel_virtual_address).unwrap();
     let initramfs_physical_address = vm.get_physical_address(initramfs_virtual_address).unwrap();
 
