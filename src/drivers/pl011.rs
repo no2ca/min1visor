@@ -11,7 +11,10 @@ pub struct Pl011 {
     pub interrupt_number: u32,
 }
 
+#[cfg(feature = "qemu-virt")]
 const UART_SIZE: usize = 0x1000;
+#[cfg(feature = "rpi4")]
+const UART_SIZE: usize = 0x200;
 
 const UART_DR: usize = 0x000;
 const UART_FR: usize = 0x018;

@@ -1,7 +1,7 @@
 //!
 //! 失敗時は以下の戻り値で原因を示す
 //!
-//! - `1`: 引数個数が不正 (`argc != 1`)
+//! - `1`: 引数個数が不正 (`argc != 2`)
 //! - `2`: 引数文字列の UTF-8 変換に失敗
 //! - `3`: 引数文字列を `usize` アドレスに変換できない
 //! - `4`: DTB の生成 (`dtb::Dtb::new`) に失敗
@@ -14,6 +14,11 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::tests::runner::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+
+#[cfg(all(feature = "rpi4", feature = "qemu-virt"))]
+compile_error!("features `rpi4` and `qemu-virt` cannot be enabled at the same time");
+#[cfg(not(any(feature = "rpi4", feature = "qemu-virt")))]
+compile_error!("enable one board feature: `rpi4` or `qemu-virt`");
 
 extern crate alloc;
 
@@ -65,6 +70,12 @@ static ALLOCATOR: Mutex<LinkedListAllocator> = Mutex::new(LinkedListAllocator::n
 static mut VIRTIO_BLK: MaybeUninit<virtio_blk::VirtioBlk> = MaybeUninit::uninit();
 static mut FAT32: MaybeUninit<fat32::Fat32> = MaybeUninit::uninit();
 
+#[cfg(feature = "qemu-virt")]
+const DTB_ARG_INDEX: usize = 0;
+#[cfg(feature = "rpi4")]
+const DTB_ARG_INDEX: usize = 1;
+const ELF_ARG_INDEX: usize = 1;
+
 struct GlobalAllocator {}
 #[global_allocator]
 static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator {};
@@ -85,7 +96,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         return 1;
     }
     let args = unsafe { slice::from_raw_parts(argv, argc) };
-    let Ok(dtb_addr_str) = unsafe { CStr::from_ptr(args[0]) }.to_str() else {
+    let Ok(dtb_addr_str) = unsafe { CStr::from_ptr(args[DTB_ARG_INDEX]) }.to_str() else {
         return 2;
     };
     let Some(dtb_address) = str_to_usize(dtb_addr_str) else {
@@ -107,9 +118,9 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     assert_eq!(currentel, 2);
 
     // メモリ管理のセットアップ
-    let elf_addr_str = unsafe { CStr::from_ptr(args[1]) }
+    let elf_addr_str = unsafe { CStr::from_ptr(args[ELF_ARG_INDEX]) }
         .to_str()
-        .expect("Failed to get argv[1]");
+        .expect("Failed to get ELF address argument");
     let elf_address = str_to_usize(elf_addr_str).expect("Failed to convert the address");
     setup_memory(&dtb, dtb_address, elf_address, stack_pointer);
 
@@ -175,6 +186,7 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     let Some((pl011_base, pl011_range)) = dtb.read_reg_property(&pl011, 0) else {
         return Err(6);
     };
+    let pl011_base = translate_rpi4_peripheral_address(pl011_base);
 
     let interrupts =
         dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
@@ -192,6 +204,15 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     *PL011_DEVICE.lock() = pl011;
     serial::init_default_serial_port(&PL011_DEVICE);
     Ok(())
+}
+
+fn translate_rpi4_peripheral_address(address: usize) -> usize {
+    #[cfg(feature = "rpi4")]
+    if (0x7e00_0000..0x8000_0000).contains(&address) {
+        return address - 0x7e00_0000 + 0xfe00_0000;
+    }
+
+    address
 }
 
 pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stack_pointer: usize) {

@@ -6,6 +6,11 @@ edition = "2024"
 [dependencies]
 qemu-exit = "3.0.2"
 
+[features]
+default = ["rpi4"]
+rpi4 = []
+qemu-virt = []
+
 [[bin]]
 name = "min1visor"
 test = true
