@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-. tools/environment
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+BASE_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+BIN_DIR=$BASE_DIR/bin
 
 RPI4_DIR=${RPI4_DIR:-$BASE_DIR/rpi4}
 RPI4_IMAGE=${RPI4_IMAGE:-$RPI4_DIR/rpi4.img}
@@ -36,4 +38,4 @@ if [ "$#" -gt 0 ]; then
     sudo umount "$RPI4_MOUNT_DIR"
 fi
 
-tools/launch_qemu_rpi4.sh
+"$BASE_DIR/tools/launch_qemu_rpi4.sh"

@@ -2,11 +2,15 @@
 set -e
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+BASE_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+BIN_DIR=$BASE_DIR/bin
 
-IMAGE="${IMAGE:-$SCRIPT_DIR/rpi4.img}"
-IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-256}"
-MOUNT_POINT="${MOUNT_POINT:-/mnt/rpi4boot}"
-PARTITION_START_SECTOR="${PARTITION_START_SECTOR:-2048}"
+RPI4_DIR=${RPI4_DIR:-$SCRIPT_DIR}
+RPI4_IMAGE=${RPI4_IMAGE:-${IMAGE:-$RPI4_DIR/rpi4.img}}
+RPI4_IMAGE_SIZE_MB=${RPI4_IMAGE_SIZE_MB:-${IMAGE_SIZE_MB:-256}}
+RPI4_MOUNT_DIR=${RPI4_MOUNT_DIR:-${MOUNT_POINT:-$BIN_DIR/rpi4-mnt}}
+RPI4_PARTITION_START_SECTOR=${RPI4_PARTITION_START_SECTOR:-${PARTITION_START_SECTOR:-2048}}
+RPI4_KERNEL=${RPI4_KERNEL:-$BASE_DIR/target/aarch64-unknown-none-softfloat/release/min1visor}
 LOOP_DEV=""
 
 FILES=(
@@ -15,13 +19,14 @@ FILES=(
     "u-boot.bin"
     "config.txt"
     "bcm2711-rpi-4-b.dtb"
+    "boot.scr"
     "min1.elf"
 )
 
 cleanup() {
-    if mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
-        echo "[cleanup] Unmounting $MOUNT_POINT ..."
-        sudo umount "$MOUNT_POINT"
+    if mountpoint -q "$RPI4_MOUNT_DIR" 2>/dev/null; then
+        echo "[cleanup] Unmounting $RPI4_MOUNT_DIR ..."
+        sudo umount "$RPI4_MOUNT_DIR"
     fi
     if [ -n "$LOOP_DEV" ]; then
         echo "[cleanup] Detaching $LOOP_DEV ..."
@@ -31,39 +36,43 @@ cleanup() {
 
 trap cleanup EXIT
 
-if [ -f "$IMAGE" ]; then
-    if [ "${FORCE:-0}" != "1" ]; then
-        echo "Error: $IMAGE already exists."
-        echo "Set FORCE=1 to recreate it."
-        exit 1
-    fi
-
-    rm -f "$IMAGE"
+if [ ! -f "$RPI4_KERNEL" ]; then
+    echo "Error: missing kernel binary $RPI4_KERNEL"
+    echo "Build it first with: cargo build --release"
+    exit 1
 fi
 
-echo "[1/5] Creating $IMAGE (${IMAGE_SIZE_MB} MiB) ..."
-dd if=/dev/zero of="$IMAGE" bs=1M count="$IMAGE_SIZE_MB"
+if [ -f "$RPI4_IMAGE" ]; then
+    rm -f "$RPI4_IMAGE"
+fi
+
+echo "[1/5] Creating $RPI4_IMAGE (${RPI4_IMAGE_SIZE_MB} MiB) ..."
+dd if=/dev/zero of="$RPI4_IMAGE" bs=1M count="$RPI4_IMAGE_SIZE_MB"
 
 echo "[2/5] Creating FAT32 partition ..."
-sudo sfdisk "$IMAGE" << EOF
-$PARTITION_START_SECTOR,,b,*
+sudo sfdisk "$RPI4_IMAGE" << EOF
+$RPI4_PARTITION_START_SECTOR,,b,*
 EOF
 
 echo "[3/5] Formatting partition ..."
-sudo mkfs.vfat -F 32 --offset="$PARTITION_START_SECTOR" "$IMAGE"
+sudo mkfs.vfat -F 32 --offset="$RPI4_PARTITION_START_SECTOR" "$RPI4_IMAGE"
 
-echo "[4/5] Mounting image ..."
-LOOP_DEV=$(sudo losetup -Pf --show "$IMAGE")
-sudo mkdir -p "$MOUNT_POINT"
-sudo mount "${LOOP_DEV}p1" "$MOUNT_POINT"
+echo "[4/5] Generating boot.scr ..."
+mkimage -A arm64 -T script -C none -n "RPi4 Boot Script" \
+    -d "$RPI4_DIR/boot.txt" "$RPI4_DIR/boot.scr"
 
-echo "[5/5] Copying files ..."
-cp ../target/aarch64-unknown-none-softfloat/release/min1visor ./min1.elf
+echo "[5/5] Mounting image ..."
+LOOP_DEV=$(sudo losetup -Pf --show "$RPI4_IMAGE")
+sudo mkdir -p "$RPI4_MOUNT_DIR"
+sudo mount "${LOOP_DEV}p1" "$RPI4_MOUNT_DIR"
+
+echo "[6/6] Copying files ..."
+cp "$RPI4_KERNEL" "$RPI4_DIR/min1.elf"
 
 COPIED=0
 for f in "${FILES[@]}"; do
-    if [ -f "$SCRIPT_DIR/$f" ]; then
-        sudo cp "$SCRIPT_DIR/$f" "$MOUNT_POINT/"
+    if [ -f "$RPI4_DIR/$f" ]; then
+        sudo cp "$RPI4_DIR/$f" "$RPI4_MOUNT_DIR/"
         echo "      copied: $f"
         COPIED=$((COPIED + 1))
     else
@@ -72,9 +81,9 @@ for f in "${FILES[@]}"; do
 done
 
 sync
-sudo umount "$MOUNT_POINT"
+sudo umount "$RPI4_MOUNT_DIR"
 sudo losetup -d "$LOOP_DEV"
 LOOP_DEV=""
 
 echo ""
-echo "Done. $IMAGE created ($COPIED file(s) copied)."
+echo "Done. $RPI4_IMAGE created ($COPIED file(s) copied)."

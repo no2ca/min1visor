@@ -7,4 +7,5 @@
 /rpi4/*.dat
 /rpi4/*.dtb
 /rpi4/*.elf
+/rpi4/*.scr
 /rpi4/*.img

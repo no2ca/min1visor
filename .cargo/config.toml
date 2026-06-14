@@ -2,5 +2,4 @@
 target = "aarch64-unknown-none-softfloat"
 
 [target.aarch64-unknown-none-softfloat]
-rustflags = ["-C", "link-arg=-Tscripts/qemu.ld"]
 runner = "tools/run_qemu.sh"
