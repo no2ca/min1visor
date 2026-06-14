@@ -71,10 +71,20 @@ static mut VIRTIO_BLK: MaybeUninit<virtio_blk::VirtioBlk> = MaybeUninit::uninit(
 static mut FAT32: MaybeUninit<fat32::Fat32> = MaybeUninit::uninit();
 
 #[cfg(feature = "qemu-virt")]
+const ARGC: usize = 2;
+#[cfg(feature = "rpi4")]
+const ARGC: usize = 3;
+
+#[cfg(feature = "qemu-virt")]
 const DTB_ARG_INDEX: usize = 0;
 #[cfg(feature = "rpi4")]
 const DTB_ARG_INDEX: usize = 1;
+
+#[cfg(feature = "qemu-virt")]
 const ELF_ARG_INDEX: usize = 1;
+#[cfg(feature = "rpi4")]
+const ELF_ARG_INDEX: usize = 2;
+
 
 struct GlobalAllocator {}
 #[global_allocator]
@@ -92,7 +102,7 @@ fn panic(info: &PanicInfo) -> ! {
 #[unsafe(no_mangle)]
 pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     let stack_pointer = crate::arch::aarch64::get_stack_pointer() as usize;
-    if argc != 2 {
+    if argc != ARGC {
         return 1;
     }
     let args = unsafe { slice::from_raw_parts(argv, argc) };
@@ -110,7 +120,15 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     };
     // ここより上はprintln!()などのシリアル通信を使用しない
 
+    // use crate::serial::SerialDevice;
+    // let r = PL011_DEVICE.lock().putc(b'H');
+    // return if r.is_ok() { 0x10 } else { 0x20 };
+    let gpfsel1 = unsafe { core::ptr::read_volatile(0xfe200004 as *const u32) };
+    return ((gpfsel1 >> 12) & 0x7).try_into().unwrap();  // GPIO 14/15 の ALT 値
+
     log_info!("Hello from main!");
+    
+    return 9;
 
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
@@ -202,6 +220,7 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
         return Err(7);
     };
     *PL011_DEVICE.lock() = pl011;
+    PL011_DEVICE.lock().enable_uart();
     serial::init_default_serial_port(&PL011_DEVICE);
     Ok(())
 }

@@ -22,17 +22,17 @@ const UART_CR: usize = 0x030; // pl011の機能を設定するレジスタ
 const UART_IMSC: usize = 0x038; // pl011の割り込みに関する操作をするレジスタ
 
 /// TX FIFO が一杯か示すビット
-const UART_FR_TXFF: u16 = 1 << 5;
+const UART_FR_TXFF: u32 = 1 << 5;
 /// RX FIFO が空か示すビット
-const UART_FR_RXFE: u16 = 1 << 4;
+const UART_FR_RXFE: u32 = 1 << 4;
 /// 受信が有効か示すビット
-const UART_CR_RXE: u16 = 1 << 9;
+const UART_CR_RXE: u32 = 1 << 9;
 /// 送信が有効か表すビット
-const UART_CR_TXE: u16 = 1 << 8;
+const UART_CR_TXE: u32 = 1 << 8;
 /// UARTが有効か示すビット
-const UART_CR_UARTEN: u16 = 1;
+const UART_CR_UARTEN: u32 = 1;
 /// 受信割り込みが有効か示すビット
-const UART_IMSC_RXIM: u16 = 1 << 4;
+const UART_IMSC_RXIM: u32 = 1 << 4;
 
 impl Pl011 {
     // Mutexの初期化前に使用
@@ -53,27 +53,35 @@ impl Pl011 {
     }
 
     fn is_tx_fifo_full(&self) -> bool {
-        (unsafe { ptr::read_volatile((self.base_address + UART_FR) as *const u16) } & UART_FR_TXFF)
+        (unsafe { ptr::read_volatile((self.base_address + UART_FR) as *const u32) } & UART_FR_TXFF)
             != 0
     }
 
     fn is_rx_fifo_empty(&self) -> bool {
-        (unsafe { ptr::read_volatile((self.base_address + UART_FR) as *const u16) } & UART_FR_RXFE)
+        (unsafe { ptr::read_volatile((self.base_address + UART_FR) as *const u32) } & UART_FR_RXFE)
             != 0
     }
 
-    pub fn enable_interrupt(&self) {
+    pub fn enable_uart(&self) {
         unsafe {
             ptr::write_volatile(
-                (self.base_address + UART_CR) as *mut u16,
+                (self.base_address + UART_CR) as *mut u32,
                 UART_CR_RXE | UART_CR_TXE | UART_CR_UARTEN,
-            );
-            ptr::write_volatile(
-                (self.base_address + UART_IMSC) as *mut u16,
-                ptr::read_volatile((self.base_address + UART_IMSC) as *const u16) | UART_IMSC_RXIM,
             );
         }
     }
+
+    pub fn enable_interrupt(&self) {
+        self.enable_uart();
+        unsafe {
+            ptr::write_volatile(
+                (self.base_address + UART_IMSC) as *mut u32,
+                ptr::read_volatile((self.base_address + UART_IMSC) as *const u32) | UART_IMSC_RXIM,
+            );
+        }
+    }
+
+
 }
 
 /// Serial構造体で使うために必要な実装
@@ -82,7 +90,7 @@ impl serial::SerialDevice for Pl011 {
         while self.is_tx_fifo_full() {
             core::hint::spin_loop();
         }
-        unsafe { ptr::write_volatile((self.base_address + UART_DR) as *mut u8, c) };
+        unsafe { ptr::write_volatile((self.base_address + UART_DR) as *mut u32, c as u32) };
         Ok(())
     }
 
@@ -90,11 +98,7 @@ impl serial::SerialDevice for Pl011 {
         if self.is_rx_fifo_empty() {
             return Ok(None);
         }
-        let c = unsafe { ptr::read_volatile((self.base_address + UART_DR) as *const u8) };
-        Ok(Some(
-            c, /* unsafe {
-                  ptr::read_volatile((self.base_address + UART_DR) as *const u8)
-              } */
-        ))
+        let c = unsafe { ptr::read_volatile((self.base_address + UART_DR) as *const u32) };
+        Ok(Some(c as u8))
     }
 }

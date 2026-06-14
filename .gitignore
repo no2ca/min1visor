@@ -2,6 +2,8 @@
 /qemu-10.0.0
 /bin
 .codex
+.agents
+opencode.json
 
 /rpi4/*.bin
 /rpi4/*.dat

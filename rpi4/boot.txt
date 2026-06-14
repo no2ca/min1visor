@@ -1,5 +1,8 @@
-if fatload mmc 1:1 $kernel_addr_r min1.elf; then
-	bootelf $kernel_addr_r $fdt_addr $kernel_addr_r
+setenv autostart yes
+
+setenv bootpart 1:1
+if fatload mmc ${bootpart} $kernel_addr_r min1.elf; then
+	go 0x813bc 0x$fdt_addr $kernel_addr_r
 else
 	echo "Unable to read min1.elf"
 fi

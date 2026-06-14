@@ -11,6 +11,7 @@ RPI4_IMAGE_SIZE_MB=${RPI4_IMAGE_SIZE_MB:-${IMAGE_SIZE_MB:-256}}
 RPI4_MOUNT_DIR=${RPI4_MOUNT_DIR:-${MOUNT_POINT:-$BIN_DIR/rpi4-mnt}}
 RPI4_PARTITION_START_SECTOR=${RPI4_PARTITION_START_SECTOR:-${PARTITION_START_SECTOR:-2048}}
 RPI4_KERNEL=${RPI4_KERNEL:-$BASE_DIR/target/aarch64-unknown-none-softfloat/release/min1visor}
+RPI4_BOOTPART=${RPI4_BOOTPART:-1:1}
 LOOP_DEV=""
 
 FILES=(
@@ -58,6 +59,13 @@ echo "[3/5] Formatting partition ..."
 sudo mkfs.vfat -F 32 --offset="$RPI4_PARTITION_START_SECTOR" "$RPI4_IMAGE"
 
 echo "[4/5] Generating boot.scr ..."
+ENTRY_POINT=$(readelf -h "$RPI4_KERNEL" \
+    | grep "Entry point address" \
+    | awk '{print $4}')
+echo "entry point: $ENTRY_POINT"
+sed -i "s/^.*go 0x[0-9a-fA-F]\+ \(0x\$fdt_addr \$kernel_addr_r\)$/\tgo $ENTRY_POINT \1/" $RPI4_DIR/boot.txt
+sed -i "s/^setenv bootpart .*/setenv bootpart $RPI4_BOOTPART/" $RPI4_DIR/boot.txt
+
 mkimage -A arm64 -T script -C none -n "RPi4 Boot Script" \
     -d "$RPI4_DIR/boot.txt" "$RPI4_DIR/boot.scr"
 
