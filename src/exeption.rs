@@ -2,7 +2,12 @@
 //! 割り込み制御
 //!
 use crate::{
-    PL011_DEVICE, arch::aarch64::registers::*, drivers::{generic_timer, gicv3::GicRedistributor}, mmio::gicv3, vgic, vm
+    PL011_DEVICE, arch::aarch64::registers::*, vm
+};
+#[cfg(feature = "qemu-virt")]
+use crate::{
+    drivers::generic_timer_gicv3,
+    vgicv3, drivers::gicv3::{GicRedistributor}, mmio::gicv3
 };
 use core::arch::global_asm;
 
@@ -277,6 +282,11 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
     unsafe { crate::arch::aarch64::advance_elr_el2() };
 }
 
+#[cfg(feature = "rpi4")]
+extern "C" fn irq_handler() {
+}
+
+#[cfg(feature = "qemu-virt")]
 extern "C" fn irq_handler() {
     // 割り込み番号を取得
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
@@ -284,12 +294,12 @@ extern "C" fn irq_handler() {
     let pl011_int_id = (PL011_DEVICE.lock()).interrupt_number;
     if interrupt_number == pl011_int_id {
         vm::input_uart();
-    } else if interrupt_number == vgic::MAINTENANCE_INTERRUPT_INTID {
-        vgic::maintenance_interrupt_handler();
+    } else if interrupt_number == vgicv3::MAINTENANCE_INTERRUPT_INTID {
+        vgicv3::maintenance_interrupt_handler();
     } else if interrupt_number == gicv3::INJECT_INTERRUPT_INT_ID {
         gicv3::inject_interrupt_handler();
-    } else if interrupt_number == *generic_timer::GENERIC_TIMER_PHYSICAL_INT_ID.lock() {
-        generic_timer::generic_timer_interrupt_handler();
+    } else if interrupt_number == *generic_timer_gicv3::GENERIC_TIMER_PHYSICAL_INT_ID.lock() {
+        generic_timer_gicv3::generic_timer_interrupt_handler();
         deactivate = false;
     }
     GicRedistributor::drop_priority(interrupt_number, group);

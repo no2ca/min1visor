@@ -1,15 +1,18 @@
 use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
-use crate::drivers::generic_timer;
-use crate::drivers::gicv3::GicRedistributor;
 use crate::drivers::virtio_blk::VirtioBlk;
 use crate::fat32::Fat32;
-use crate::mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
 use crate::mmio::virtio_blk::VirtioBlkMmio;
 use crate::mutex::Mutex;
 use crate::serial::SerialDevice;
-use crate::{PL011_DEVICE, log_debug, log_warn, paging::*, vgic};
+use crate::{PL011_DEVICE, log_debug, log_warn, paging::*};
+#[cfg(feature = "qemu-virt")]
+use crate::{
+    mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio},
+    vgicv3,
+    drivers::{gicv3::GicRedistributor, generic_timer_gicv3}
+};
 
 use alloc::boxed::Box;
 use alloc::collections::linked_list::LinkedList;
@@ -31,7 +34,9 @@ pub struct VM {
     ram_physical_base_address: usize,
     ram_size: usize,
     mmio_handlers: LinkedList<MmioEntry>,
+    #[cfg(feature = "qemu-virt")]
     gic_distributor_mmio: *mut GicDistributorMmio,
+    #[cfg(feature = "qemu-virt")]
     gic_redistributor_mmio: *mut GicRedistributorMmio,
     pl011_mmio: *mut Pl011Mmio,
 }
@@ -102,7 +107,9 @@ impl VM {
         ram_physical_base_address: usize,
         ram_size: usize,
         mmio_handlers: LinkedList<MmioEntry>,
+        #[cfg(feature = "qemu-virt")]
         gic_distributor_mmio: *mut GicDistributorMmio,
+        #[cfg(feature = "qemu-virt")]
         gic_redistributor_mmio: *mut GicRedistributorMmio,
         pl011_mmio: *mut Pl011Mmio,
     ) -> Self {
@@ -112,7 +119,9 @@ impl VM {
             ram_physical_base_address,
             ram_size,
             mmio_handlers,
+            #[cfg(feature = "qemu-virt")]
             gic_distributor_mmio,
+            #[cfg(feature = "qemu-virt")]
             gic_redistributor_mmio,
             pl011_mmio,
         }
@@ -153,10 +162,12 @@ impl VM {
         }
     }
 
+    #[cfg(feature = "qemu-virt")]
     pub fn get_gic_distributor_mmio(&self) -> *mut GicDistributorMmio {
         self.gic_distributor_mmio
     }
 
+    #[cfg(feature = "qemu-virt")]
     pub fn get_gic_redistributor_mmio(&self) -> *mut GicRedistributorMmio {
         self.gic_redistributor_mmio
     }
@@ -176,6 +187,7 @@ impl MmioEntry {
     }
 }
 
+#[cfg(feature = "qemu-virt")]
 pub fn create_vm(
     fat32: &Fat32,
     blk: &mut VirtioBlk,
@@ -203,13 +215,13 @@ pub fn create_vm(
     map_address_stage2(ram_physical_address, RAM_VIRTUAL_BASE, RAM_SIZE, true, true)
         .expect("Failed to map memory");
 
-    vgic::init_vgic(gic_redistributor);
+    vgicv3::init_vgic(gic_redistributor);
 
     // MMIO ハンドラの初期化
     let mut mmio_handlers = LinkedList::new();
 
     // Generic Timerの初期化
-    generic_timer::init_generic_timer_local(gic_redistributor);
+    generic_timer_gicv3::init_generic_timer_local(gic_redistributor);
 
     // PL011
     let mut pl011_mmio = Box::new(Pl011Mmio::new());
@@ -382,6 +394,8 @@ pub fn input_uart() {
     }
 
     let vm = get_active_vm();
+
+    #[cfg(feature = "qemu-virt")]
     unsafe { (*vm.get_pl011_mmio()).push(c, &mut *vm.get_gic_distributor_mmio()) };
 }
 

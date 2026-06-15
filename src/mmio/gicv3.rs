@@ -1,6 +1,7 @@
+#![cfg(feature = "qemu-virt")]
 use crate::arch::aarch64;
 use crate::log_warn;
-use crate::vgic;
+use crate::vgicv3;
 use crate::vm;
 use crate::vm::MmioHandler;
 
@@ -172,7 +173,7 @@ impl GicDistributorMmio {
         let mpidr_aff1 = (mpidr_el1 & ((1 << 16) - 1)) >> 8;
         let mpidr_aff0 = mpidr_el1 & ((1 << 8) - 1);
 
-        let list_entry = vgic::create_list_register_entry(int_id, group, priority, physical_int_id);
+        let list_entry = vgicv3::create_list_register_entry(int_id, group, priority, physical_int_id);
 
         if router_aff3 == mpidr_aff3
             && router_aff2 == mpidr_aff2
@@ -180,7 +181,7 @@ impl GicDistributorMmio {
             && router_aff0 == mpidr_aff0
         {
             /* 同じpCPU */
-            vgic::add_virtual_interrupt(list_entry);
+            vgicv3::add_virtual_interrupt(list_entry);
         } else {
             /* 違うVMのpCPU */
             self.to_inject_interrupt.push_back(list_entry);
@@ -320,12 +321,12 @@ impl GicRedistributorMmio {
         let group = self.get_group(int_id);
         let priority = self.get_priority(int_id);
 
-        let list_entry = vgic::create_list_register_entry(int_id, group, priority, physical_int_id);
+        let list_entry = vgicv3::create_list_register_entry(int_id, group, priority, physical_int_id);
         if self.affinity
             == crate::arch::aarch64::mpidr_to_affinity(crate::arch::aarch64::get_mpidr_el1())
         {
             /* 同じpCPU */
-            vgic::add_virtual_interrupt(list_entry);
+            vgicv3::add_virtual_interrupt(list_entry);
         } else {
             /* 違うVMのpCPU */
             self.to_inject_interrupt.push_back(list_entry);
@@ -349,10 +350,10 @@ pub fn inject_interrupt_handler() {
     let distributor: &mut _ = unsafe { &mut *vm.get_gic_distributor_mmio() };
     let redistributor = unsafe { &mut *vm.get_gic_redistributor_mmio() };
     while let Some(entry) = distributor.to_inject_interrupt.pop_front() {
-        vgic::add_virtual_interrupt(entry);
+        vgicv3::add_virtual_interrupt(entry);
     }
     while let Some(entry) = redistributor.to_inject_interrupt.pop_front() {
-        vgic::add_virtual_interrupt(entry);
+        vgicv3::add_virtual_interrupt(entry);
     }
 }
 

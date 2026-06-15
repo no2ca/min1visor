@@ -1,3 +1,5 @@
+#![cfg(feature="qemu-virt")]
+
 use crate::log_warn;
 
 pub const DTB_GIC_LEVEL: u32 = 4;

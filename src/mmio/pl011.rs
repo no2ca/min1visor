@@ -2,6 +2,7 @@
 //! PL011 の MMIO Driver
 //!
 
+#[cfg(feature = "qemu-virt")]
 use crate::mmio::gicv3::GicDistributorMmio;
 use crate::print;
 
@@ -50,6 +51,7 @@ impl Pl011Mmio {
         }
     }
 
+    #[cfg(feature = "qemu-virt")]
     pub fn push(&mut self, data: u8, distributor: &mut GicDistributorMmio) {
         for c in &mut self.read_buffer {
             if *c == 0 {
@@ -62,6 +64,10 @@ impl Pl011Mmio {
             self.raw_interrupt_status |= UART_RIS_RXRIS;
             distributor.trigger_interrupt(PL011_INT_ID, None);
         }
+    }
+    
+    #[cfg(feature = "rpi4")]
+    pub fn push(&mut self, data: u8) {
     }
 }
 

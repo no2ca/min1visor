@@ -1,3 +1,4 @@
+#![cfg(feature = "qemu-virt")]
 use crate::arch::aarch64;
 use crate::drivers::gicv3::{GicGroup, GicRedistributor};
 use crate::mmio::gicv3::INJECT_INTERRUPT_INT_ID;

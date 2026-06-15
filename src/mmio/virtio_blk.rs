@@ -183,6 +183,7 @@ impl VirtioBlkMmio {
             self.write_used(descriptor_id, total_size);
         }
         self.interrupt_status |= 1;
+        #[cfg(feature = "qemu-virt")]
         unsafe { &mut *get_current_vm().get_gic_distributor_mmio() }
             .trigger_interrupt(VIRTIO_BLK_INT_ID, None);
     }

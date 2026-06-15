@@ -24,7 +24,7 @@ extern crate alloc;
 
 mod dtb;
 mod drivers {
-    pub mod generic_timer;
+    pub mod generic_timer_gicv3;
     pub mod gicv3;
     pub mod pl011;
     pub mod virtio;
@@ -52,13 +52,18 @@ mod mmio {
     pub mod virtio_blk;
 }
 mod fat32;
-mod vgic;
+mod vgicv3;
 mod vm;
 
 #[cfg(feature = "rpi4")]
 mod mailbox;
 
-use crate::drivers::{generic_timer, gicv3, virtio_blk};
+#[cfg(feature = "qemu-virt")]
+use crate::drivers::gicv3;
+#[cfg(feature = "qemu-virt")]
+use crate::drivers::generic_timer_gicv3;
+
+use crate::drivers::{virtio_blk};
 use crate::{allocator::linked_list::LinkedListAllocator, log::LogLevel, mutex::Mutex};
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::MaybeUninit;
@@ -104,6 +109,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
+    #[cfg(feature = "rpi4")]
     let gpfsel1_before = unsafe { core::ptr::read_volatile(drivers::pl011::GPFSEL1 as *const u32) };
     let stack_pointer = crate::arch::aarch64::get_stack_pointer() as usize;
     if argc != ARGC {
@@ -124,18 +130,16 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     };
     // ここより上はprintln!()などのシリアル通信を使用しない
 
-    let gpfsel1_after = unsafe { core::ptr::read_volatile(drivers::pl011::GPFSEL1 as *const u32) };
-
     #[cfg(feature = "rpi4")]
     {
-        use crate::serial::SerialDevice;
-        let _ = PL011_DEVICE.lock().putc(b'X');
+        // GPIOの設定を出力
+        let gpfsel1_after = unsafe { core::ptr::read_volatile(drivers::pl011::GPFSEL1 as *const u32) };
+        log_info!("gpfsel1_before: {:X?}", gpfsel1_before);
+        log_info!("gpfsel1_after: {:X?}", gpfsel1_after);
     }
 
     log_info!("Hello from main!");
     
-    log_info!("gpfsel1_before: {:X?}", gpfsel1_before);
-    log_info!("gpfsel1_after: {:X?}", gpfsel1_after);
     
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
@@ -160,9 +164,6 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     crate::arch::aarch64::AArch64Hypervisor::setup_hypervisor();
     log_debug!("setup_hypervisor: ok");
 
-    // Generic Timerの初期化
-    generic_timer::init_generic_timer_global(&dtb);
-    log_debug!("init_generic_timer_global: ok");
 
     #[cfg(feature = "qemu-virt")]
     {
@@ -182,6 +183,10 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
         // fat32のセットアップ
         let fat32 = init_fat32(&mut virtioblk);
+
+        // Generic Timerの初期化
+        generic_timer_gicv3::init_generic_timer_global(&dtb);
+        log_debug!("init_generic_timer_global: ok");
 
         let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk, &redistributor);
 
@@ -226,14 +231,23 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     };
     let pl011_base = translate_rpi4_peripheral_address(pl011_base);
 
-    let interrupts =
+    let _interrupts =
         dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
+
     let mut interrupt_number = 0;
-    // 割り込みのタイプとトリガがあっているか検証
-    if u32::from_be(interrupts[0]) == gicv3::DTB_GIC_SPI
-        && u32::from_be(interrupts[2]) == gicv3::DTB_GIC_LEVEL
+    #[cfg(feature = "qemu-virt")]
     {
-        interrupt_number = gicv3::GIC_SPI_BASE + u32::from_be(interrupts[1]);
+        // 割り込みのタイプとトリガがあっているか検証
+        if u32::from_be(interrupts[0]) == gicv3::DTB_GIC_SPI
+            && u32::from_be(interrupts[2]) == gicv3::DTB_GIC_LEVEL
+        {
+            interrupt_number = gicv3::GIC_SPI_BASE + u32::from_be(interrupts[1]);
+        }
+    }
+    
+    #[cfg(feature = "rpi4")]
+    {
+        interrupt_number = 0;
     }
 
     let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number) else {
@@ -326,6 +340,7 @@ fn str_to_usize(s: &str) -> Option<usize> {
     usize::from_str_radix(start?, radix).ok()
 }
 
+#[cfg(feature = "qemu-virt")]
 fn init_gic_distributor(dtb: &dtb::Dtb) -> gicv3::GicDistributor {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-v3", None).unwrap();
     let (base_address, size) = dtb.read_reg_property(&gic_node, 0).unwrap();
@@ -335,6 +350,7 @@ fn init_gic_distributor(dtb: &dtb::Dtb) -> gicv3::GicDistributor {
     gic_distributor
 }
 
+#[cfg(feature = "qemu-virt")]
 fn init_gic_redistributor(dtb: &dtb::Dtb) -> gicv3::GicRedistributor {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-v3", None).unwrap();
     let (base_address, size) = dtb.read_reg_property(&gic_node, 1).unwrap();
@@ -344,6 +360,7 @@ fn init_gic_redistributor(dtb: &dtb::Dtb) -> gicv3::GicRedistributor {
     gic_redistributor
 }
 
+#[cfg(feature = "qemu-virt")]
 fn enable_serial_port_interrupt(
     pl011: &drivers::pl011::Pl011,
     distributor: &gicv3::GicDistributor,
@@ -362,6 +379,7 @@ fn enable_serial_port_interrupt(
     pl011.enable_interrupt();
 }
 
+#[cfg(feature = "qemu-virt")]
 fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
     let mut virtio = None;
     loop {
@@ -382,6 +400,7 @@ fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
     }
 }
 
+#[cfg(feature = "qemu-virt")]
 pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) -> fat32::Fat32 {
     #[derive(Debug)]
     #[repr(C)]
