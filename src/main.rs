@@ -104,6 +104,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
+    let gpfsel1_before = unsafe { core::ptr::read_volatile(drivers::pl011::GPFSEL1 as *const u32) };
     let stack_pointer = crate::arch::aarch64::get_stack_pointer() as usize;
     if argc != ARGC {
         return 1;
@@ -123,6 +124,8 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     };
     // ここより上はprintln!()などのシリアル通信を使用しない
 
+    let gpfsel1_after = unsafe { core::ptr::read_volatile(drivers::pl011::GPFSEL1 as *const u32) };
+
     #[cfg(feature = "rpi4")]
     {
         use crate::serial::SerialDevice;
@@ -130,6 +133,9 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     }
 
     log_info!("Hello from main!");
+    
+    log_info!("gpfsel1_before: {:X?}", gpfsel1_before);
+    log_info!("gpfsel1_after: {:X?}", gpfsel1_after);
     
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
@@ -238,7 +244,8 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     #[cfg(feature = "rpi4")]
     {
         // baud_rate = 115200, ibrd = 26, fbrd = 3
-        PL011_DEVICE.lock().configure(26, 3);
+        // PL011_DEVICE.lock().configure(26, 3);
+        PL011_DEVICE.lock().init_gpio();
     }
 
     PL011_DEVICE.lock().enable_uart();

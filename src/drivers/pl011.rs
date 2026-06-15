@@ -18,18 +18,11 @@ const UART_SIZE: usize = 0x200;
 
 const UART_DR: usize = 0x000;
 const UART_FR: usize = 0x018;
-const UART_IBRD: usize = 0x024;
-const UART_FBRD: usize = 0x028;
-const UART_LCRH: usize = 0x02C;
 const UART_CR: usize = 0x030; // pl011の機能を設定するレジスタ
-const UART_IMSC: usize = 0x038; // pl011の割り込みに関する操作をするレジスタ
-const UART_ICR: usize = 0x44;
-
-const UART_LCRH_WLEN_8: u32 = 0x60; // 8-bit word length
-const UART_LCRH_FEN: u32 = 0x10; // FIFO enable
+const _UART_IMSC: usize = 0x038; // pl011の割り込みに関する操作をするレジスタ
 
 // 送信中フラグ
-const UART_FR_BUSY: u32 = 1 << 3; 
+const _UART_FR_BUSY: u32 = 1 << 3; 
 /// TX FIFO が一杯か示すビット
 const UART_FR_TXFF: u32 = 1 << 5;
 /// RX FIFO が空か示すビット
@@ -41,12 +34,11 @@ const UART_CR_TXE: u32 = 1 << 8;
 /// UARTが有効か示すビット
 const UART_CR_UARTEN: u32 = 1;
 /// 受信割り込みが有効か示すビット
-const UART_IMSC_RXIM: u32 = 1 << 4;
+const _UART_IMSC_RXIM: u32 = 1 << 4;
 
 // RPi4 (BCM2711) GPIO レジスタ（物理ベース: 0xFE200000）
 const GPIO_BASE: u32 = 0xFE200000;
-const GPFSEL1: u32 = GPIO_BASE + 0x04;
-const GPIO_PUP_PDN_CNTRL_REG0: u32 = GPIO_BASE + 0xE4;
+pub const GPFSEL1: u32 = GPIO_BASE + 0x04;
 
 #[inline(always)]
 fn memory_barrier() {
@@ -87,37 +79,12 @@ impl Pl011 {
     pub fn disable_uart(&self) {
         unsafe {
             // 1. まず送信が完全に終わる（BUSYが0になる）まで安全に待機する
-            while (ptr::read_volatile((self.base_address + UART_FR) as *const u32) & UART_FR_BUSY) != 0 {
+            while (ptr::read_volatile((self.base_address + UART_FR) as *const u32) & _UART_FR_BUSY) != 0 {
                 // busy loop
             }
             // 2. その後UARTを無効化
             ptr::write_volatile((self.base_address + UART_CR) as *mut u32, 0);
         }
-        memory_barrier();
-    }
-
-    pub fn configure(&self, ibrd: u16, fbrd: u8) {
-        // 先にGPIOを設定（U-BootがMini UARTを使用していた場合の対策）
-        // #[cfg(feature = "rpi4")]
-        // self.init_gpio();
-
-        self.disable_uart();
-        // unsafe {
-        //     // IBRD / FBRD 設定
-        //     ptr::write_volatile((self.base_address + UART_IBRD) as *mut u32, ibrd as u32);
-        //     ptr::write_volatile((self.base_address + UART_FBRD) as *mut u32, fbrd as u32);
-        //     memory_barrier();
-
-        //     // LCRHに書き込んだ時点で、上記の分周器（IBRD, FBRD）の設定が確定する
-        //     ptr::write_volatile(
-        //         (self.base_address + UART_LCRH) as *mut u32,
-        //         UART_LCRH_WLEN_8 | UART_LCRH_FEN,
-        //     );
-        //     memory_barrier();
-
-        //     // 古いペンディング状態の割り込み・エラーをすべてクリア
-        //     ptr::write_volatile((self.base_address + UART_ICR) as *mut u32, 0x7FF);
-        // }
         memory_barrier();
     }
 
@@ -135,17 +102,18 @@ impl Pl011 {
         self.enable_uart();
         unsafe {
             ptr::write_volatile(
-                (self.base_address + UART_IMSC) as *mut u32,
-                ptr::read_volatile((self.base_address + UART_IMSC) as *const u32) | UART_IMSC_RXIM,
+                (self.base_address + _UART_IMSC) as *mut u32,
+                ptr::read_volatile((self.base_address + _UART_IMSC) as *const u32) | _UART_IMSC_RXIM,
             );
         }
     }
 
     /// RPi4 (BCM2711) 向けの GPIO14, 15 初期化処理
     #[cfg(feature = "rpi4")]
-    fn init_gpio(&self) {
+    pub fn init_gpio(&self) {
         unsafe {
-            // 1. GPIO 14 & 15 を ALT0 (PL011 RXD0/TXD0) に設定
+            // U-BootがデフォルトでGPIOをどのように設定しているかは分からないため、初期化が必要
+            // GPIO 14 & 15 を ALT0 (PL011 RXD0/TXD0) に設定
             // GPFSEL1 は GPIO 10〜19 を制御 (1ピンあたり3ビット)
             // GPIO 14: bits 12-14, GPIO 15: bits 15-17
             // ALT0 の設定値は 0b100 (4)
@@ -154,13 +122,13 @@ impl Pl011 {
             gpfsel1 |= (4 << 12) | (4 << 15);    // ALT0をセット
             ptr::write_volatile(GPFSEL1 as *mut u32, gpfsel1);
 
-            // 2. 内部プルアップ／プルダウンを無効化 (No Pull)
+            // 内部プルアップ／プルダウンを無効化 (No Pull)
             // BCM2711では GPIO_PUP_PDN_CNTRL_REG0 (0xE4) を使用 (1ピンあたり2ビット)
             // GPIO 14: bits 28-29, GPIO 15: bits 30-31
             // 0b00 (0) = No Pull / Float
-            let mut pupd0 = ptr::read_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *const u32);
-            pupd0 &= !((3 << 28) | (3 << 30)); // 00にクリア
-            ptr::write_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *mut u32, pupd0);
+            // let mut pupd0 = ptr::read_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *const u32);
+            // pupd0 &= !((3 << 28) | (3 << 30)); // 00にクリア
+            // ptr::write_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *mut u32, pupd0);
         }
         memory_barrier();
     }
