@@ -11,3 +11,4 @@ opencode.json
 /rpi4/*.elf
 /rpi4/*.scr
 /rpi4/*.img
+/rpi4/boot.txt
