@@ -26,6 +26,7 @@ mod dtb;
 mod drivers {
     pub mod generic_timer_gicv3;
     pub mod gicv3;
+    pub mod gicv2;
     pub mod pl011;
     pub mod virtio;
     pub mod virtio_blk;
@@ -69,6 +70,8 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::mem::MaybeUninit;
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
+use core::ptr::read_volatile;
+use core::ptr::write_volatile;
 use core::sync::atomic::AtomicU8;
 use core::{ffi::CStr, slice};
 
@@ -164,13 +167,19 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     crate::arch::aarch64::AArch64Hypervisor::setup_hypervisor();
     log_debug!("setup_hypervisor: ok");
 
-
+    // 例外ハンドラのセットアップ
+    crate::exeption::setup_exception();
+    log_debug!("setup_exception: ok");
+    
+    #[cfg(feature = "rpi4")]
+    {
+        // 割り込みコントローラのセットアップ
+        init_gicv2(&dtb);
+    }
+    log_debug!("init_gicv2: ok");
+    
     #[cfg(feature = "qemu-virt")]
     {
-        // 例外ハンドラのセットアップ
-        crate::exeption::setup_exception();
-        log_debug!("setup_exception: ok");
-
         // 割り込みコントローラのセットアップ
         let distributor = init_gic_distributor(&dtb);
         let redistributor = init_gic_redistributor(&dtb);
@@ -231,7 +240,7 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     };
     let pl011_base = translate_rpi4_peripheral_address(pl011_base);
 
-    let _interrupts =
+    let interrupts =
         dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
 
     let mut interrupt_number = 0;
@@ -338,6 +347,13 @@ fn str_to_usize(s: &str) -> Option<usize> {
         }
     }
     usize::from_str_radix(start?, radix).ok()
+}
+
+#[cfg(feature = "rpi4")]
+fn init_gicv2(dtb: &dtb::Dtb) {
+    let gic_node = dtb.search_node_by_compatible(b"arm,gic-400", None).unwrap();
+    let (base_address, size) = dtb.read_reg_property(&gic_node, 0).unwrap();
+    crate::log_info!("GICv2's Base Address: {:#X}", base_address);
 }
 
 #[cfg(feature = "qemu-virt")]
