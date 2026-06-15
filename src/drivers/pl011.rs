@@ -18,8 +18,14 @@ const UART_SIZE: usize = 0x200;
 
 const UART_DR: usize = 0x000;
 const UART_FR: usize = 0x018;
+const UART_IBRD: usize = 0x024;
+const UART_FBRD: usize = 0x028;
+const UART_LCRH: usize = 0x02C;
 const UART_CR: usize = 0x030; // pl011の機能を設定するレジスタ
 const UART_IMSC: usize = 0x038; // pl011の割り込みに関する操作をするレジスタ
+
+const UART_LCRH_WLEN_8: u32 = 0x60; // 8-bit word length
+const UART_LCRH_FEN: u32 = 0x10; // FIFO enable
 
 /// TX FIFO が一杯か示すビット
 const UART_FR_TXFF: u32 = 1 << 5;
@@ -60,6 +66,22 @@ impl Pl011 {
     fn is_rx_fifo_empty(&self) -> bool {
         (unsafe { ptr::read_volatile((self.base_address + UART_FR) as *const u32) } & UART_FR_RXFE)
             != 0
+    }
+
+    pub fn disable_uart(&self) {
+        unsafe { ptr::write_volatile((self.base_address + UART_CR) as *mut u32, 0) };
+    }
+
+    pub fn configure(&self, ibrd: u16, fbrd: u8) {
+        self.disable_uart();
+        unsafe {
+            ptr::write_volatile((self.base_address + UART_IBRD) as *mut u32, ibrd as u32);
+            ptr::write_volatile((self.base_address + UART_FBRD) as *mut u32, fbrd as u32);
+            ptr::write_volatile(
+                (self.base_address + UART_LCRH) as *mut u32,
+                UART_LCRH_WLEN_8 | UART_LCRH_FEN,
+            );
+        }
     }
 
     pub fn enable_uart(&self) {

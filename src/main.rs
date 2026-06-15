@@ -55,6 +55,9 @@ mod fat32;
 mod vgic;
 mod vm;
 
+#[cfg(feature = "rpi4")]
+mod mailbox;
+
 use crate::drivers::{generic_timer, gicv3, virtio_blk};
 use crate::{allocator::linked_list::LinkedListAllocator, log::LogLevel, mutex::Mutex};
 use core::alloc::{GlobalAlloc, Layout};
@@ -120,11 +123,12 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     };
     // ここより上はprintln!()などのシリアル通信を使用しない
 
-    // use crate::serial::SerialDevice;
-    // let r = PL011_DEVICE.lock().putc(b'H');
-    // return if r.is_ok() { 0x10 } else { 0x20 };
-    let gpfsel1 = unsafe { core::ptr::read_volatile(0xfe200004 as *const u32) };
-    return ((gpfsel1 >> 12) & 0x7).try_into().unwrap();  // GPIO 14/15 の ALT 値
+    #[cfg(feature = "rpi4")]
+    {
+        use crate::serial::SerialDevice;
+        let _ = PL011_DEVICE.lock().putc(b'X');
+    }
+    log_info!("clock rate: {}", mailbox::get_clock_rate(mailbox::CLOCK_UART).unwrap() as usize);
 
     log_info!("Hello from main!");
     
@@ -220,6 +224,12 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
         return Err(7);
     };
     *PL011_DEVICE.lock() = pl011;
+
+    #[cfg(feature = "rpi4")]
+    {
+        PL011_DEVICE.lock().configure(2, 0xB);
+    }
+
     PL011_DEVICE.lock().enable_uart();
     serial::init_default_serial_port(&PL011_DEVICE);
     Ok(())
