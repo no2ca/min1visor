@@ -128,12 +128,9 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         use crate::serial::SerialDevice;
         let _ = PL011_DEVICE.lock().putc(b'X');
     }
-    log_info!("clock rate: {}", mailbox::get_clock_rate(mailbox::CLOCK_UART).unwrap() as usize);
 
     log_info!("Hello from main!");
     
-    return 9;
-
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
     crate::log_info!("CurrentEL: {}", currentel);
@@ -145,46 +142,59 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         .expect("Failed to get ELF address argument");
     let elf_address = str_to_usize(elf_addr_str).expect("Failed to convert the address");
     setup_memory(&dtb, dtb_address, elf_address, stack_pointer);
+    log_debug!("setup_memory: ok");
 
     // ページングのセットアップ
     paging::init_stage2_translation_table();
     paging::map_address_stage2(0x40000000, 0x40000000, 0x80000000, true, true)
         .expect("Failed to map memory");
-
-    // 例外ハンドラのセットアップ
-    crate::exeption::setup_exception();
-
-    // 割り込みコントローラのセットアップ
-    let distributor = init_gic_distributor(&dtb);
-    let redistributor = init_gic_redistributor(&dtb);
-
-    // PL011の割り込みのセットアップ
-    enable_serial_port_interrupt(&PL011_DEVICE.lock(), &distributor);
-
-    // virtio_blk (legacy) のセットアップ
-    let mut virtioblk = init_virtio_blk(&dtb).unwrap();
-
-    // fat32のセットアップ
-    let fat32 = init_fat32(&mut virtioblk);
+    log_debug!("init_stage2_translation_table: ok");
 
     // hypervisorモードのセットアップ
     crate::arch::aarch64::AArch64Hypervisor::setup_hypervisor();
+    log_debug!("setup_hypervisor: ok");
 
     // Generic Timerの初期化
     generic_timer::init_generic_timer_global(&dtb);
+    log_debug!("init_generic_timer_global: ok");
 
-    #[cfg(test)]
-    test_main();
+    #[cfg(feature = "qemu-virt")]
+    {
+        // 例外ハンドラのセットアップ
+        crate::exeption::setup_exception();
+        log_debug!("setup_exception: ok");
 
-    let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk, &redistributor);
+        // 割り込みコントローラのセットアップ
+        let distributor = init_gic_distributor(&dtb);
+        let redistributor = init_gic_redistributor(&dtb);
 
-    unsafe {
-        VIRTIO_BLK = MaybeUninit::new(virtioblk);
-        FAT32 = MaybeUninit::new(fat32);
+        // PL011の割り込みのセットアップ
+        enable_serial_port_interrupt(&PL011_DEVICE.lock(), &distributor);
+
+        // virtio_blk (legacy) のセットアップ
+        let mut virtioblk = init_virtio_blk(&dtb).unwrap();
+
+        // fat32のセットアップ
+        let fat32 = init_fat32(&mut virtioblk);
+
+        let (boot_address, argument) = vm::create_vm(&fat32, &mut virtioblk, &redistributor);
+
+        unsafe {
+            VIRTIO_BLK = MaybeUninit::new(virtioblk);
+            FAT32 = MaybeUninit::new(fat32);
+        }
+
+        #[cfg(test)]
+        test_main();
+
+        log_info!("Booting VM...");
+        crate::arch::aarch64::AArch64Hypervisor::boot_vm(boot_address, argument)
     }
-
-    log_info!("Booting VM...");
-    crate::arch::aarch64::AArch64Hypervisor::boot_vm(boot_address, argument)
+    
+    log_debug!("entering loop...");
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
@@ -227,7 +237,8 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
 
     #[cfg(feature = "rpi4")]
     {
-        PL011_DEVICE.lock().configure(2, 0xB);
+        // baud_rate = 115200, ibrd = 26, fbrd = 3
+        PL011_DEVICE.lock().configure(26, 3);
     }
 
     PL011_DEVICE.lock().enable_uart();
