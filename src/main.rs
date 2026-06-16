@@ -60,28 +60,45 @@ mod vm;
 mod mailbox;
 
 #[cfg(feature = "rpi4")]
-use crate::drivers::gicv2::GicV2Info;
+use crate::drivers::gicv2::GicV2;
 #[cfg(feature = "qemu-virt")]
 use crate::drivers::gicv3;
 #[cfg(feature = "qemu-virt")]
 use crate::drivers::generic_timer_gicv3;
 
-use crate::drivers::{virtio_blk};
+#[cfg(feature = "qemu-virt")]
+use crate::drivers::virtio_blk;
 use crate::{allocator::linked_list::LinkedListAllocator, log::LogLevel, mutex::Mutex};
 use core::alloc::{GlobalAlloc, Layout};
+#[cfg(feature = "qemu-virt")]
 use core::mem::MaybeUninit;
 #[allow(unused_imports)]
 use core::panic::PanicInfo;
-use core::ptr::read_volatile;
-use core::ptr::write_volatile;
 use core::sync::atomic::AtomicU8;
+#[cfg(feature = "rpi4")]
+use core::sync::atomic::AtomicUsize;
 use core::{ffi::CStr, slice};
 
+//
+// statics
+//
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Debug as u8);
-static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::invalid());
+static PL011_DEVICE: Mutex<drivers::pl011::Pl011> = Mutex::new(drivers::pl011::Pl011::uninit());
 static ALLOCATOR: Mutex<LinkedListAllocator> = Mutex::new(LinkedListAllocator::new());
+
+#[cfg(feature = "qemu-virt")]
 static mut VIRTIO_BLK: MaybeUninit<virtio_blk::VirtioBlk> = MaybeUninit::uninit();
+#[cfg(feature = "qemu-virt")]
 static mut FAT32: MaybeUninit<fat32::Fat32> = MaybeUninit::uninit();
+
+#[cfg(feature = "rpi4")]
+pub static GICD_BASE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "rpi4")]
+pub static GICC_BASE: AtomicUsize = AtomicUsize::new(0);
+
+//
+// constants
+//
 
 #[cfg(feature = "qemu-virt")]
 const ARGC: usize = 2;
@@ -175,9 +192,12 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     #[cfg(feature = "rpi4")]
     {
         // 割り込みコントローラのセットアップ
-        let gicv2 = init_gicv2(&dtb);
+        let gic = init_gicv2(&dtb);
+        gic.enable_interrupt();
+        log_debug!("GIC interrupt enabled");
+        gic.send_sgi_to_self();
+        log_debug!("init_gicv2: ok");
     }
-    log_debug!("init_gicv2: ok");
     
     #[cfg(feature = "qemu-virt")]
     {
@@ -244,12 +264,12 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     #[cfg(feature = "rpi4")]
     let pl011_base = translate_rpi4_peripheral_address(pl011_base);
 
-    let interrupts =
-        dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
-
     let mut interrupt_number = 0;
     #[cfg(feature = "qemu-virt")]
     {
+        let interrupts =
+            dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
+
         // 割り込みのタイプとトリガがあっているか検証
         if u32::from_be(interrupts[0]) == gicv3::DTB_GIC_SPI
             && u32::from_be(interrupts[2]) == gicv3::DTB_GIC_LEVEL
@@ -358,20 +378,22 @@ fn str_to_usize(s: &str) -> Option<usize> {
 }
 
 #[cfg(feature = "rpi4")]
-fn init_gicv2(dtb: &dtb::Dtb) -> GicV2Info {
+fn init_gicv2(dtb: &dtb::Dtb) -> GicV2 {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-400", None).unwrap();
     let (gicd_base, gicd_size) = dtb.read_reg_property(&gic_node, 0).unwrap();
     let (gicc_base, gicc_size) = dtb.read_reg_property(&gic_node, 1).unwrap();
     
     let gicd_base = translate_rpi4_peripheral_address(gicd_base);
     let gicc_base = translate_rpi4_peripheral_address(gicc_base);
+    GICD_BASE.store(gicd_base, core::sync::atomic::Ordering::Relaxed);
+    GICC_BASE.store(gicc_base, core::sync::atomic::Ordering::Relaxed);
 
     crate::log_info!("GICv2 GICD Base: {:#X}, Size: {:#X}", gicd_base, gicd_size);
     crate::log_info!("GICC Base: {:#X}, Size: {:#X}", gicc_base, gicc_size);
     
-    drivers::gicv2::dump_gicd_info(gicd_base);
-
-    GicV2Info { gicd_base, gicd_size, gicc_base, gicc_size }
+    let gic = GicV2::new(gicd_base, gicc_base);
+    gic.dump_gicd_info();
+    gic
 }
 
 #[cfg(feature = "qemu-virt")]

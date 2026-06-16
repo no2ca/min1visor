@@ -4,35 +4,75 @@ use crate::log_info;
 /// bits[7:5] CPUNumber: 実装されているCPUインターフェース数 - 1
 pub const GICD_TYPER: usize = 0x004;
 
-pub const GICD_CTLR: u32 = 0x000;
-pub const GICD_ISENABLER: u32 = 0x100;
-pub const GICD_IPRIORITYR: u32 = 0x400;
-pub const GICC_CTLR: u32 = 0x0000;
+const GICD_CTLR: usize = 0x000;
+const GICD_ISENABLER: usize = 0x100;
+const GICD_IPRIORITYR: usize = 0x400;
+const GICD_SGIR: usize = 0xF00;
 
-pub struct GicV2Info {
+const GICC_CTLR: usize = 0x0000;
+const GICC_PMR: usize = 0x004;
+pub const GICC_IAR: usize = 0x00C;
+pub const GICC_EOIR: usize = 0x010;
+
+pub struct GicV2 {
     pub gicd_base: usize,
-    pub gicd_size: usize,
     pub gicc_base: usize,
-    pub gicc_size: usize,
 }
 
-#[inline(always)]
-unsafe fn mmio_read32(base: usize, offset: usize) -> u32 {
-    core::ptr::read_volatile((base + offset) as *const u32)
-}
+impl GicV2 {
+    #[inline(always)]
+    pub fn distributor_read32(&self, offset: usize) -> u32 {
+        unsafe { core::ptr::read_volatile((self.gicd_base + offset) as *const u32) }
+    }
 
-pub fn dump_gicd_info(base: usize) {
-    let typer = unsafe {
-        mmio_read32(base, GICD_TYPER)
-    };
-    let it_lines_number = typer & 0x1F;
-    let max_interrupts = (it_lines_number + 1) * 32;
-    let cpu_number = (typer >> 5) & 0x7;
+    #[inline(always)]
+    pub fn interface_read32(&self, offset: usize) -> u32 {
+        unsafe { core::ptr::read_volatile((self.gicc_base + offset) as *const u32) }
+    }
+
+    #[inline(always)]
+    pub unsafe fn distributor_write32(&self, offset: usize, value: u32) {
+        unsafe { core::ptr::write_volatile((self.gicd_base + offset) as *mut u32, value) }
+    }
+
+    #[inline(always)]
+    pub unsafe fn interface_write32(&self, offset: usize, value: u32) {
+        unsafe { core::ptr::write_volatile((self.gicc_base + offset) as *mut u32, value) }
+    }
     
-    log_info!(
-        "GICD_TYPER: {:#010X} (max interrupts: {}, CPU interfaces: {})",
-        typer,
-        max_interrupts,
-        cpu_number + 1
-    );
+    pub fn new(gicd_base: usize, gicc_base: usize) -> Self {
+        Self { gicd_base, gicc_base }
+    }
+
+    pub fn dump_gicd_info(&self) {
+        let typer = self.distributor_read32(GICD_TYPER);
+        let it_lines_number = typer & 0x1F;
+        let max_interrupts = (it_lines_number + 1) * 32;
+        let cpu_number = (typer >> 5) & 0x7;
+        
+        log_info!(
+            "GICD_TYPER: {:#010X} (max interrupts: {}, CPU interfaces: {})",
+            typer,
+            max_interrupts,
+            cpu_number + 1
+        );
+    }
+
+    pub fn enable_interrupt(&self) {
+        unsafe {
+            self.distributor_write32(GICD_CTLR, 1);
+            self.interface_write32(GICC_CTLR, 1);
+            // その CPU が受け取ってよい優先度の下限を決めるマスク
+            self.interface_write32(GICC_PMR, 0xff);
+        }
+    }
+    
+    /// Software Generated Interruptを発生させる
+    pub fn send_sgi_to_self(&self) {
+        const SGI_ID: u32 = 1;
+        const SGIR_TARGET_SELF: u32 = 0b10 << 24;
+        unsafe {
+            self.distributor_write32(GICD_SGIR, SGIR_TARGET_SELF | SGI_ID);
+        }
+    }
 }

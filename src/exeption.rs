@@ -215,6 +215,21 @@ pub fn setup_exception() {
         static exception_table: *const u8;
     }
     unsafe { crate::arch::aarch64::set_vbar_el2(&exception_table as *const _ as usize as u64) };
+
+    unsafe {
+        core::arch::asm!("msr daifclr, #2");
+    }
+
+    let daif: u64;
+
+    unsafe {
+        core::arch::asm!(
+            "mrs {}, DAIF",
+            out(reg) daif
+        );
+    }
+
+    crate::log_debug!("DAIF={:#x}", daif);
 }
 
 #[cfg(feature = "qemu-virt")]
@@ -284,6 +299,18 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 
 #[cfg(feature = "rpi4")]
 extern "C" fn irq_handler() {
+    use core::sync::atomic::Ordering::Relaxed;
+    use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2, log_debug};
+
+    let gicd_base = GICD_BASE.load(Relaxed);
+    let gicc_base = GICC_BASE.load(Relaxed);
+    let gic = GicV2::new(gicd_base, gicc_base);
+    let iar = gic.interface_read32(crate::drivers::gicv2::GICC_IAR);
+    let int_id = iar & 0x3ff;
+    log_debug!("int_id={}", int_id);
+    unsafe {
+        gic.interface_write32(crate::drivers::gicv2::GICC_EOIR, iar);
+    }
 }
 
 #[cfg(feature = "qemu-virt")]
