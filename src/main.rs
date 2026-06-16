@@ -239,6 +239,9 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     let Some((pl011_base, pl011_range)) = dtb.read_reg_property(&pl011, 0) else {
         return Err(6);
     };
+    
+    
+    #[cfg(feature = "rpi4")]
     let pl011_base = translate_rpi4_peripheral_address(pl011_base);
 
     let interrupts =
@@ -277,12 +280,16 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     Ok(())
 }
 
+#[cfg(feature = "rpi4")]
 fn translate_rpi4_peripheral_address(address: usize) -> usize {
-    #[cfg(feature = "rpi4")]
     if (0x7e00_0000..0x8000_0000).contains(&address) {
         return address - 0x7e00_0000 + 0xfe00_0000;
     }
-
+    
+    if (0x4000_0000..0x4000_0000 + 0x0080_0000).contains(&address) {
+        return address - 0x4000_0000 + 0xff80_0000;
+    }
+    
     address
 }
 
@@ -356,8 +363,8 @@ fn init_gicv2(dtb: &dtb::Dtb) -> GicV2Info {
     let (gicd_base, gicd_size) = dtb.read_reg_property(&gic_node, 0).unwrap();
     let (gicc_base, gicc_size) = dtb.read_reg_property(&gic_node, 1).unwrap();
     
-    let gicd_base = gicd_base - 0x4000_0000 + 0xff80_0000;
-    let gicc_base = gicc_base - 0x4000_0000 + 0xff80_0000;
+    let gicd_base = translate_rpi4_peripheral_address(gicd_base);
+    let gicc_base = translate_rpi4_peripheral_address(gicc_base);
 
     crate::log_info!("GICv2 GICD Base: {:#X}, Size: {:#X}", gicd_base, gicd_size);
     crate::log_info!("GICC Base: {:#X}, Size: {:#X}", gicc_base, gicc_size);
