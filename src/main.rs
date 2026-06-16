@@ -355,8 +355,15 @@ fn init_gicv2(dtb: &dtb::Dtb) -> GicV2Info {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-400", None).unwrap();
     let (gicd_base, gicd_size) = dtb.read_reg_property(&gic_node, 0).unwrap();
     let (gicc_base, gicc_size) = dtb.read_reg_property(&gic_node, 1).unwrap();
+    
+    let gicd_base = gicd_base - 0x4000_0000 + 0xff80_0000;
+    let gicc_base = gicc_base - 0x4000_0000 + 0xff80_0000;
+
     crate::log_info!("GICv2 GICD Base: {:#X}, Size: {:#X}", gicd_base, gicd_size);
     crate::log_info!("GICC Base: {:#X}, Size: {:#X}", gicc_base, gicc_size);
+    
+    drivers::gicv2::dump_gicd_info(gicd_base);
+
     GicV2Info { gicd_base, gicd_size, gicc_base, gicc_size }
 }
 
