@@ -59,6 +59,8 @@ mod vm;
 #[cfg(feature = "rpi4")]
 mod mailbox;
 
+#[cfg(feature = "rpi4")]
+use crate::drivers::gicv2::GicV2Info;
 #[cfg(feature = "qemu-virt")]
 use crate::drivers::gicv3;
 #[cfg(feature = "qemu-virt")]
@@ -143,7 +145,6 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
     log_info!("Hello from main!");
     
-    
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
     crate::log_info!("CurrentEL: {}", currentel);
@@ -174,7 +175,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     #[cfg(feature = "rpi4")]
     {
         // 割り込みコントローラのセットアップ
-        init_gicv2(&dtb);
+        let gicv2 = init_gicv2(&dtb);
     }
     log_debug!("init_gicv2: ok");
     
@@ -350,10 +351,13 @@ fn str_to_usize(s: &str) -> Option<usize> {
 }
 
 #[cfg(feature = "rpi4")]
-fn init_gicv2(dtb: &dtb::Dtb) {
+fn init_gicv2(dtb: &dtb::Dtb) -> GicV2Info {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-400", None).unwrap();
-    let (base_address, size) = dtb.read_reg_property(&gic_node, 0).unwrap();
-    crate::log_info!("GICv2's Base Address: {:#X}", base_address);
+    let (gicd_base, gicd_size) = dtb.read_reg_property(&gic_node, 0).unwrap();
+    let (gicc_base, gicc_size) = dtb.read_reg_property(&gic_node, 1).unwrap();
+    crate::log_info!("GICv2 GICD Base: {:#X}, Size: {:#X}", gicd_base, gicd_size);
+    crate::log_info!("GICC Base: {:#X}, Size: {:#X}", gicc_base, gicc_size);
+    GicV2Info { gicd_base, gicd_size, gicc_base, gicc_size }
 }
 
 #[cfg(feature = "qemu-virt")]
