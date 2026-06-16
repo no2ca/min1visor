@@ -1,3 +1,4 @@
+#![cfg(feature = "qemu-virt")]
 //!
 //! Virtio-Blkの実装
 //!

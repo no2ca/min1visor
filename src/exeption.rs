@@ -1,14 +1,9 @@
 //!
 //! 割り込み制御
 //!
-use crate::{
-    PL011_DEVICE, arch::aarch64::registers::*, vm
-};
+use crate::{PL011_DEVICE, arch::aarch64::registers::*, vm};
 #[cfg(feature = "qemu-virt")]
-use crate::{
-    drivers::generic_timer_gicv3,
-    vgicv3, drivers::gicv3::{GicRedistributor}, mmio::gicv3
-};
+use crate::{drivers::generic_timer_gicv3, drivers::gicv3::GicRedistributor, mmio::gicv3, vgicv3};
 use core::arch::global_asm;
 
 #[repr(C)]
@@ -299,8 +294,8 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 
 #[cfg(feature = "rpi4")]
 extern "C" fn irq_handler() {
-    use core::sync::atomic::Ordering::Relaxed;
     use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2, log_debug};
+    use core::sync::atomic::Ordering::Relaxed;
 
     let gicd_base = GICD_BASE.load(Relaxed);
     let gicc_base = GICC_BASE.load(Relaxed);

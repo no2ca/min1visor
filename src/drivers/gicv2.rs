@@ -39,9 +39,12 @@ impl GicV2 {
     pub unsafe fn interface_write32(&self, offset: usize, value: u32) {
         unsafe { core::ptr::write_volatile((self.gicc_base + offset) as *mut u32, value) }
     }
-    
+
     pub fn new(gicd_base: usize, gicc_base: usize) -> Self {
-        Self { gicd_base, gicc_base }
+        Self {
+            gicd_base,
+            gicc_base,
+        }
     }
 
     pub fn dump_gicd_info(&self) {
@@ -49,7 +52,7 @@ impl GicV2 {
         let it_lines_number = typer & 0x1F;
         let max_interrupts = (it_lines_number + 1) * 32;
         let cpu_number = (typer >> 5) & 0x7;
-        
+
         log_info!(
             "GICD_TYPER: {:#010X} (max interrupts: {}, CPU interfaces: {})",
             typer,
@@ -66,7 +69,7 @@ impl GicV2 {
             self.interface_write32(GICC_PMR, 0xff);
         }
     }
-    
+
     /// Software Generated Interruptを発生させる
     pub fn send_sgi_to_self(&self) {
         const SGI_ID: u32 = 1;

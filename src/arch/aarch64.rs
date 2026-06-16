@@ -1,3 +1,4 @@
+#![allow(unused)]
 use crate::{allocator::linked_list::allocate_pages, paging};
 use core::arch::asm;
 

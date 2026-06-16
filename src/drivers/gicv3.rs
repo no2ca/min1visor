@@ -1,4 +1,4 @@
-#![cfg(feature="qemu-virt")]
+#![cfg(feature = "qemu-virt")]
 
 use crate::log_warn;
 

@@ -1,3 +1,4 @@
+#![cfg(feature = "qemu-virt")]
 use crate::drivers::{virtio::*, virtio_blk::*};
 use crate::fat32::FileInfo;
 use crate::{FAT32, VIRTIO_BLK};

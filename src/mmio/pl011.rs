@@ -65,10 +65,9 @@ impl Pl011Mmio {
             distributor.trigger_interrupt(PL011_INT_ID, None);
         }
     }
-    
+
     #[cfg(feature = "rpi4")]
-    pub fn push(&mut self, data: u8) {
-    }
+    pub fn push(&mut self, data: u8) {}
 }
 
 impl MmioHandler for Pl011Mmio {

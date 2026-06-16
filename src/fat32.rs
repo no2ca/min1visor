@@ -1,3 +1,4 @@
+#![cfg(feature = "qemu-virt")]
 use crate::allocator::linked_list::{allocate_pages, free_pages};
 use crate::drivers::virtio_blk::VirtioBlk;
 use crate::paging::PAGE_SHIFT;

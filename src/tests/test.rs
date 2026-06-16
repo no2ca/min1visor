@@ -1,5 +1,6 @@
 #![cfg(test)]
 #![cfg(feature = "qemu-virt")]
+use crate::drivers::gicv3::GicDistributor;
 use crate::{
     allocator::linked_list::LinkedListAllocator,
     drivers::{
@@ -17,7 +18,6 @@ use crate::{
     log::{self, LogLevel},
     mutex::Mutex,
 };
-use crate::drivers::gicv3::GicDistributor;
 use core::mem::{offset_of, size_of};
 
 const TEST_HEAP_START: usize = 0x5000_0000;

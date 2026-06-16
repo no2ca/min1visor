@@ -22,7 +22,7 @@ const UART_CR: usize = 0x030; // pl011の機能を設定するレジスタ
 const _UART_IMSC: usize = 0x038; // pl011の割り込みに関する操作をするレジスタ
 
 // 送信中フラグ
-const _UART_FR_BUSY: u32 = 1 << 3; 
+const _UART_FR_BUSY: u32 = 1 << 3;
 /// TX FIFO が一杯か示すビット
 const UART_FR_TXFF: u32 = 1 << 5;
 /// RX FIFO が空か示すビット
@@ -50,7 +50,7 @@ fn memory_barrier() {
 
 impl Pl011 {
     // Mutexの初期化前に使用
-    pub const fn invalid() -> Self {
+    pub const fn uninit() -> Self {
         Self {
             base_address: 0,
             interrupt_number: 0x0,
@@ -79,7 +79,9 @@ impl Pl011 {
     pub fn disable_uart(&self) {
         unsafe {
             // 1. まず送信が完全に終わる（BUSYが0になる）まで安全に待機する
-            while (ptr::read_volatile((self.base_address + UART_FR) as *const u32) & _UART_FR_BUSY) != 0 {
+            while (ptr::read_volatile((self.base_address + UART_FR) as *const u32) & _UART_FR_BUSY)
+                != 0
+            {
                 // busy loop
             }
             // 2. その後UARTを無効化
@@ -103,7 +105,8 @@ impl Pl011 {
         unsafe {
             ptr::write_volatile(
                 (self.base_address + _UART_IMSC) as *mut u32,
-                ptr::read_volatile((self.base_address + _UART_IMSC) as *const u32) | _UART_IMSC_RXIM,
+                ptr::read_volatile((self.base_address + _UART_IMSC) as *const u32)
+                    | _UART_IMSC_RXIM,
             );
         }
     }
@@ -119,7 +122,7 @@ impl Pl011 {
             // ALT0 の設定値は 0b100 (4)
             let mut gpfsel1 = ptr::read_volatile(GPFSEL1 as *const u32);
             gpfsel1 &= !((7 << 12) | (7 << 15)); // 一度マスク
-            gpfsel1 |= (4 << 12) | (4 << 15);    // ALT0をセット
+            gpfsel1 |= (4 << 12) | (4 << 15); // ALT0をセット
             ptr::write_volatile(GPFSEL1 as *mut u32, gpfsel1);
 
             // 内部プルアップ／プルダウンを無効化 (No Pull)
@@ -132,7 +135,6 @@ impl Pl011 {
         }
         memory_barrier();
     }
-
 }
 
 /// Serial構造体で使うために必要な実装

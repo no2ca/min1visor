@@ -1,17 +1,21 @@
+#![allow(unused)]
 use crate::allocator::linked_list::allocate_pages;
 use crate::arch::aarch64::registers::*;
+#[cfg(feature = "qemu-virt")]
 use crate::drivers::virtio_blk::VirtioBlk;
+#[cfg(feature = "qemu-virt")]
 use crate::fat32::Fat32;
 use crate::mmio::pl011::Pl011Mmio;
+#[cfg(feature = "qemu-virt")]
 use crate::mmio::virtio_blk::VirtioBlkMmio;
 use crate::mutex::Mutex;
 use crate::serial::SerialDevice;
 use crate::{PL011_DEVICE, log_debug, log_warn, paging::*};
 #[cfg(feature = "qemu-virt")]
 use crate::{
+    drivers::{generic_timer_gicv3, gicv3::GicRedistributor},
     mmio::gicv3::{GicDistributorMmio, GicRedistributorMmio},
     vgicv3,
-    drivers::{gicv3::GicRedistributor, generic_timer_gicv3}
 };
 
 use alloc::boxed::Box;
@@ -107,10 +111,8 @@ impl VM {
         ram_physical_base_address: usize,
         ram_size: usize,
         mmio_handlers: LinkedList<MmioEntry>,
-        #[cfg(feature = "qemu-virt")]
-        gic_distributor_mmio: *mut GicDistributorMmio,
-        #[cfg(feature = "qemu-virt")]
-        gic_redistributor_mmio: *mut GicRedistributorMmio,
+        #[cfg(feature = "qemu-virt")] gic_distributor_mmio: *mut GicDistributorMmio,
+        #[cfg(feature = "qemu-virt")] gic_redistributor_mmio: *mut GicRedistributorMmio,
         pl011_mmio: *mut Pl011Mmio,
     ) -> Self {
         Self {
@@ -396,7 +398,9 @@ pub fn input_uart() {
     let vm = get_active_vm();
 
     #[cfg(feature = "qemu-virt")]
-    unsafe { (*vm.get_pl011_mmio()).push(c, &mut *vm.get_gic_distributor_mmio()) };
+    unsafe {
+        (*vm.get_pl011_mmio()).push(c, &mut *vm.get_gic_distributor_mmio())
+    };
 }
 
 pub fn get_current_vm() -> &'static mut VM {

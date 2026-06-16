@@ -173,7 +173,8 @@ impl GicDistributorMmio {
         let mpidr_aff1 = (mpidr_el1 & ((1 << 16) - 1)) >> 8;
         let mpidr_aff0 = mpidr_el1 & ((1 << 8) - 1);
 
-        let list_entry = vgicv3::create_list_register_entry(int_id, group, priority, physical_int_id);
+        let list_entry =
+            vgicv3::create_list_register_entry(int_id, group, priority, physical_int_id);
 
         if router_aff3 == mpidr_aff3
             && router_aff2 == mpidr_aff2
@@ -321,7 +322,8 @@ impl GicRedistributorMmio {
         let group = self.get_group(int_id);
         let priority = self.get_priority(int_id);
 
-        let list_entry = vgicv3::create_list_register_entry(int_id, group, priority, physical_int_id);
+        let list_entry =
+            vgicv3::create_list_register_entry(int_id, group, priority, physical_int_id);
         if self.affinity
             == crate::arch::aarch64::mpidr_to_affinity(crate::arch::aarch64::get_mpidr_el1())
         {

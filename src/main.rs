@@ -25,8 +25,8 @@ extern crate alloc;
 mod dtb;
 mod drivers {
     pub mod generic_timer_gicv3;
-    pub mod gicv3;
     pub mod gicv2;
+    pub mod gicv3;
     pub mod pl011;
     pub mod virtio;
     pub mod virtio_blk;
@@ -59,12 +59,12 @@ mod vm;
 #[cfg(feature = "rpi4")]
 mod mailbox;
 
+#[cfg(feature = "qemu-virt")]
+use crate::drivers::generic_timer_gicv3;
 #[cfg(feature = "rpi4")]
 use crate::drivers::gicv2::GicV2;
 #[cfg(feature = "qemu-virt")]
 use crate::drivers::gicv3;
-#[cfg(feature = "qemu-virt")]
-use crate::drivers::generic_timer_gicv3;
 
 #[cfg(feature = "qemu-virt")]
 use crate::drivers::virtio_blk;
@@ -115,7 +115,6 @@ const ELF_ARG_INDEX: usize = 1;
 #[cfg(feature = "rpi4")]
 const ELF_ARG_INDEX: usize = 2;
 
-
 struct GlobalAllocator {}
 #[global_allocator]
 static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator {};
@@ -155,13 +154,14 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     #[cfg(feature = "rpi4")]
     {
         // GPIOの設定を出力
-        let gpfsel1_after = unsafe { core::ptr::read_volatile(drivers::pl011::GPFSEL1 as *const u32) };
+        let gpfsel1_after =
+            unsafe { core::ptr::read_volatile(drivers::pl011::GPFSEL1 as *const u32) };
         log_info!("gpfsel1_before: {:X?}", gpfsel1_before);
         log_info!("gpfsel1_after: {:X?}", gpfsel1_after);
     }
 
     log_info!("Hello from main!");
-    
+
     // 現在のELを表示
     let currentel = crate::arch::aarch64::get_currentel() >> 2;
     crate::log_info!("CurrentEL: {}", currentel);
@@ -188,7 +188,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     // 例外ハンドラのセットアップ
     crate::exeption::setup_exception();
     log_debug!("setup_exception: ok");
-    
+
     #[cfg(feature = "rpi4")]
     {
         // 割り込みコントローラのセットアップ
@@ -198,7 +198,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         gic.send_sgi_to_self();
         log_debug!("init_gicv2: ok");
     }
-    
+
     #[cfg(feature = "qemu-virt")]
     {
         // 割り込みコントローラのセットアップ
@@ -231,7 +231,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         log_info!("Booting VM...");
         crate::arch::aarch64::AArch64Hypervisor::boot_vm(boot_address, argument)
     }
-    
+
     log_debug!("entering loop...");
     loop {
         core::hint::spin_loop();
@@ -259,8 +259,7 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     let Some((pl011_base, pl011_range)) = dtb.read_reg_property(&pl011, 0) else {
         return Err(6);
     };
-    
-    
+
     #[cfg(feature = "rpi4")]
     let pl011_base = translate_rpi4_peripheral_address(pl011_base);
 
@@ -277,7 +276,7 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
             interrupt_number = gicv3::GIC_SPI_BASE + u32::from_be(interrupts[1]);
         }
     }
-    
+
     #[cfg(feature = "rpi4")]
     {
         interrupt_number = 0;
@@ -305,11 +304,11 @@ fn translate_rpi4_peripheral_address(address: usize) -> usize {
     if (0x7e00_0000..0x8000_0000).contains(&address) {
         return address - 0x7e00_0000 + 0xfe00_0000;
     }
-    
+
     if (0x4000_0000..0x4000_0000 + 0x0080_0000).contains(&address) {
         return address - 0x4000_0000 + 0xff80_0000;
     }
-    
+
     address
 }
 
@@ -382,7 +381,7 @@ fn init_gicv2(dtb: &dtb::Dtb) -> GicV2 {
     let gic_node = dtb.search_node_by_compatible(b"arm,gic-400", None).unwrap();
     let (gicd_base, gicd_size) = dtb.read_reg_property(&gic_node, 0).unwrap();
     let (gicc_base, gicc_size) = dtb.read_reg_property(&gic_node, 1).unwrap();
-    
+
     let gicd_base = translate_rpi4_peripheral_address(gicd_base);
     let gicc_base = translate_rpi4_peripheral_address(gicc_base);
     GICD_BASE.store(gicd_base, core::sync::atomic::Ordering::Relaxed);
@@ -390,7 +389,7 @@ fn init_gicv2(dtb: &dtb::Dtb) -> GicV2 {
 
     crate::log_info!("GICv2 GICD Base: {:#X}, Size: {:#X}", gicd_base, gicd_size);
     crate::log_info!("GICC Base: {:#X}, Size: {:#X}", gicc_base, gicc_size);
-    
+
     let gic = GicV2::new(gicd_base, gicc_base);
     gic.dump_gicd_info();
     gic

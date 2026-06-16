@@ -152,6 +152,7 @@ pub fn allocate_pages(number_of_pages: usize, align_order: usize) -> Result<usiz
     }
 }
 
+#[allow(unused)]
 pub fn free_pages(address: usize, number_of_pages: usize) {
     unsafe {
         ALLOCATOR.lock().dealloc_aligned(
