@@ -36,6 +36,8 @@ const UART_CR_TXE: u32 = 1 << 8;
 const UART_CR_UARTEN: u32 = 1;
 /// 受信割り込みが有効か示すビット
 const UART_IMSC_RXIM: u32 = 1 << 4;
+/// 時間閾値割り込み
+const UART_IMSC_RTIM: u32 = 1 << 6;
 
 // RPi4 (BCM2711) GPIO レジスタ（物理ベース: 0xFE200000）
 const GPIO_BASE: u32 = 0xFE200000;
@@ -65,6 +67,31 @@ impl Pl011 {
             base_address,
             interrupt_number,
         })
+    }
+
+    /// RPi4 (BCM2711) 向けの GPIO14, 15 初期化処理
+    #[cfg(feature = "rpi4")]
+    pub fn init_gpio(&self) {
+        unsafe {
+            // U-BootがデフォルトでGPIOをどのように設定しているかは分からないため、初期化が必要
+            // GPIO 14 & 15 を ALT0 (PL011 RXD0/TXD0) に設定
+            // GPFSEL1 は GPIO 10〜19 を制御 (1ピンあたり3ビット)
+            // GPIO 14: bits 12-14, GPIO 15: bits 15-17
+            // ALT0 の設定値は 0b100 (4)
+            let mut gpfsel1 = ptr::read_volatile(GPFSEL1 as *const u32);
+            gpfsel1 &= !((7 << 12) | (7 << 15)); // 一度マスク
+            gpfsel1 |= (4 << 12) | (4 << 15); // ALT0をセット
+            ptr::write_volatile(GPFSEL1 as *mut u32, gpfsel1);
+
+            // 内部プルアップ／プルダウンを無効化 (No Pull)
+            // BCM2711では GPIO_PUP_PDN_CNTRL_REG0 (0xE4) を使用 (1ピンあたり2ビット)
+            // GPIO 14: bits 28-29, GPIO 15: bits 30-31
+            // 0b00 (0) = No Pull / Float
+            // let mut pupd0 = ptr::read_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *const u32);
+            // pupd0 &= !((3 << 28) | (3 << 30)); // 00にクリア
+            // ptr::write_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *mut u32, pupd0);
+        }
+        memory_barrier();
     }
 
     fn is_tx_fifo_full(&self) -> bool {
@@ -110,34 +137,13 @@ impl Pl011 {
             ptr::write_volatile(
                 (self.base_address + UART_IMSC) as *mut u32,
                 ptr::read_volatile((self.base_address + UART_IMSC) as *const u32)
-                    | UART_IMSC_RXIM,
+                    | UART_IMSC_RXIM | UART_IMSC_RTIM,
             );
         }
     }
-
-    /// RPi4 (BCM2711) 向けの GPIO14, 15 初期化処理
-    #[cfg(feature = "rpi4")]
-    pub fn init_gpio(&self) {
-        unsafe {
-            // U-BootがデフォルトでGPIOをどのように設定しているかは分からないため、初期化が必要
-            // GPIO 14 & 15 を ALT0 (PL011 RXD0/TXD0) に設定
-            // GPFSEL1 は GPIO 10〜19 を制御 (1ピンあたり3ビット)
-            // GPIO 14: bits 12-14, GPIO 15: bits 15-17
-            // ALT0 の設定値は 0b100 (4)
-            let mut gpfsel1 = ptr::read_volatile(GPFSEL1 as *const u32);
-            gpfsel1 &= !((7 << 12) | (7 << 15)); // 一度マスク
-            gpfsel1 |= (4 << 12) | (4 << 15); // ALT0をセット
-            ptr::write_volatile(GPFSEL1 as *mut u32, gpfsel1);
-
-            // 内部プルアップ／プルダウンを無効化 (No Pull)
-            // BCM2711では GPIO_PUP_PDN_CNTRL_REG0 (0xE4) を使用 (1ピンあたり2ビット)
-            // GPIO 14: bits 28-29, GPIO 15: bits 30-31
-            // 0b00 (0) = No Pull / Float
-            // let mut pupd0 = ptr::read_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *const u32);
-            // pupd0 &= !((3 << 28) | (3 << 30)); // 00にクリア
-            // ptr::write_volatile(GPIO_PUP_PDN_CNTRL_REG0 as *mut u32, pupd0);
-        }
-        memory_barrier();
+    
+    pub fn clear_interrpt(&self) {
+        unsafe { core::ptr::write_volatile((self.base_address + UART_ICR) as *mut u32, 0x7ff) };
     }
 }
 

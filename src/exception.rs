@@ -299,9 +299,10 @@ extern "C" fn irq_handler() {
     let int_id = iar & 0x3ff;
     log_debug!("int_id={}", int_id);
     let pl011_int_id = (PL011_DEVICE.lock()).interrupt_number;
-    match int_id {
-        153 => pl011_irq_handler(),
-        _ => crate::log_info!("spurious/other irq: {}", int_id),
+    if int_id == pl011_int_id {
+        pl011_irq_handler();
+    } else {
+        crate::log_info!("spurious/other irq: {}", int_id);
     }
 
     unsafe {
@@ -335,14 +336,20 @@ extern "C" fn irq_handler() {
 
 fn pl011_irq_handler() {
     use crate::serial::SerialDevice;
-    let c = (PL011_DEVICE.lock()).getc();
-    if c.is_err() {
-        crate::log_warn!("Failed to get a character");
-        return;
+    loop {
+        let c = (PL011_DEVICE.lock()).getc();
+        match c {
+            Ok(Some(ch)) => {
+                log_info!("input: {}", ch as char);
+            }
+            Ok(None) => {
+                break;
+            }
+            Err(e) => {
+                crate::log_warn!("getc failed: {:?}", e);
+                break;
+            }
+        }
     }
-    let c = c.unwrap().unwrap_or(0);
-    if c == 0 {
-        return;
-    }
-    log_info!("input: {}", c as char);
+    PL011_DEVICE.lock().clear_interrpt();
 }
