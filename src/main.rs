@@ -45,7 +45,7 @@ mod allocator {
     pub mod linked_list;
 }
 mod elf;
-mod exeption;
+mod exception;
 mod paging;
 mod mmio {
     pub mod gicv3;
@@ -186,8 +186,8 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     log_debug!("setup_hypervisor: ok");
 
     // 例外ハンドラのセットアップ
-    crate::exeption::setup_exception();
-    crate::exeption::enable_irq();
+    crate::exception::setup_exception();
+    crate::exception::enable_irq();
     
     #[cfg(feature = "rpi4")]
     {
