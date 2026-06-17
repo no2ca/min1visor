@@ -187,16 +187,16 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
     // 例外ハンドラのセットアップ
     crate::exeption::setup_exception();
-    log_debug!("setup_exception: ok");
-
+    crate::exeption::enable_irq();
+    
     #[cfg(feature = "rpi4")]
     {
         // 割り込みコントローラのセットアップ
         let gic = init_gicv2(&dtb);
         gic.enable_interrupt();
-        log_debug!("GIC interrupt enabled");
         gic.send_sgi_to_self();
-        log_debug!("init_gicv2: ok");
+        let pl011_int_id = (*PL011_DEVICE.lock()).interrupt_number;
+        log_debug!("pl011 int_id: {}", pl011_int_id);
     }
 
     #[cfg(feature = "qemu-virt")]
@@ -260,37 +260,38 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
         return Err(6);
     };
 
-    #[cfg(feature = "rpi4")]
-    let pl011_base = translate_rpi4_peripheral_address(pl011_base);
+    let interrupts =
+        dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
 
-    let mut interrupt_number = 0;
+    #[cfg(feature = "rpi4")]
+    {
+        let pl011_base = translate_rpi4_peripheral_address(pl011_base);
+        let interrupt_number = 32 + u32::from_be(interrupts[1]);
+        let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number) else {
+            return Err(7);
+        };
+        *PL011_DEVICE.lock() = pl011;
+    }
+
     #[cfg(feature = "qemu-virt")]
     {
-        let interrupts =
-            dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
-
+        let mut interrupt_number = 0;
         // 割り込みのタイプとトリガがあっているか検証
         if u32::from_be(interrupts[0]) == gicv3::DTB_GIC_SPI
             && u32::from_be(interrupts[2]) == gicv3::DTB_GIC_LEVEL
         {
             interrupt_number = gicv3::GIC_SPI_BASE + u32::from_be(interrupts[1]);
         }
-    }
 
-    #[cfg(feature = "rpi4")]
-    {
-        interrupt_number = 0;
+        let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number) else {
+            return Err(7);
+        };
+        *PL011_DEVICE.lock() = pl011;
     }
-
-    let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number) else {
-        return Err(7);
-    };
-    *PL011_DEVICE.lock() = pl011;
 
     #[cfg(feature = "rpi4")]
     {
         // baud_rate = 115200, ibrd = 26, fbrd = 3
-        // PL011_DEVICE.lock().configure(26, 3);
         PL011_DEVICE.lock().init_gpio();
     }
 
@@ -388,7 +389,7 @@ fn init_gicv2(dtb: &dtb::Dtb) -> GicV2 {
     GICC_BASE.store(gicc_base, core::sync::atomic::Ordering::Relaxed);
 
     crate::log_info!("GICv2 GICD Base: {:#X}, Size: {:#X}", gicd_base, gicd_size);
-    crate::log_info!("GICC Base: {:#X}, Size: {:#X}", gicc_base, gicc_size);
+    crate::log_info!("GICv2 GICC Base: {:#X}, Size: {:#X}", gicc_base, gicc_size);
 
     let gic = GicV2::new(gicd_base, gicc_base);
     gic.dump_gicd_info();

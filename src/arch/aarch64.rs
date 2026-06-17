@@ -90,6 +90,19 @@ impl AArch64Hypervisor {
     }
 }
 
+pub fn get_daif() -> u64 {
+    let daif: u64;
+
+    unsafe {
+        core::arch::asm!(
+            "mrs {}, DAIF",
+            out(reg) daif
+        );
+    }
+    
+    daif
+}
+
 unsafe fn get_daif_and_disable_irq_fiq() -> u64 {
     let daif: u64;
     unsafe {
@@ -113,6 +126,12 @@ unsafe fn set_daif(state: u64) {
             msr daif, {r}",
             r = in(reg) state,
         )
+    }
+}
+
+pub unsafe fn set_daif_irq() {
+    unsafe {
+        core::arch::asm!("msr daifclr, #2");
     }
 }
 

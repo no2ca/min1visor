@@ -1,12 +1,12 @@
-use crate::log_info;
+use crate::{log_debug, log_info};
 
 /// bits[4:0] ITLinesNumber: 最大割り込みID数 = (ITLinesNumber+1)*32
 /// bits[7:5] CPUNumber: 実装されているCPUインターフェース数 - 1
 pub const GICD_TYPER: usize = 0x004;
 
 const GICD_CTLR: usize = 0x000;
-const GICD_ISENABLER: usize = 0x100;
-const GICD_IPRIORITYR: usize = 0x400;
+const _GICD_ISENABLER: usize = 0x100;
+const _GICD_IPRIORITYR: usize = 0x400;
 const GICD_SGIR: usize = 0xF00;
 
 const GICC_CTLR: usize = 0x0000;
@@ -68,12 +68,14 @@ impl GicV2 {
             // その CPU が受け取ってよい優先度の下限を決めるマスク
             self.interface_write32(GICC_PMR, 0xff);
         }
+        log_debug!("ok");
     }
 
     /// Software Generated Interruptを発生させる
     pub fn send_sgi_to_self(&self) {
         const SGI_ID: u32 = 1;
         const SGIR_TARGET_SELF: u32 = 0b10 << 24;
+        log_debug!("Sending SGI (SGI_ID={})...", SGI_ID);
         unsafe {
             self.distributor_write32(GICD_SGIR, SGIR_TARGET_SELF | SGI_ID);
         }

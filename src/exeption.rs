@@ -1,10 +1,10 @@
 //!
 //! 割り込み制御
 //!
-use crate::{PL011_DEVICE, arch::aarch64::registers::*, vm};
+use crate::{arch::aarch64::{get_daif, registers::*, set_daif_irq}, log_debug, vm};
+use core::arch::global_asm;
 #[cfg(feature = "qemu-virt")]
 use crate::{drivers::generic_timer_gicv3, drivers::gicv3::GicRedistributor, mmio::gicv3, vgicv3};
-use core::arch::global_asm;
 
 #[repr(C)]
 pub struct Registers {
@@ -210,21 +210,15 @@ pub fn setup_exception() {
         static exception_table: *const u8;
     }
     unsafe { crate::arch::aarch64::set_vbar_el2(&exception_table as *const _ as usize as u64) };
+    log_debug!("ok");
+}
 
-    unsafe {
-        core::arch::asm!("msr daifclr, #2");
-    }
-
-    let daif: u64;
-
-    unsafe {
-        core::arch::asm!(
-            "mrs {}, DAIF",
-            out(reg) daif
-        );
-    }
-
+pub fn enable_irq() {
+    unsafe { set_daif_irq() };
+    let daif = get_daif();
     crate::log_debug!("DAIF={:#x}", daif);
+    assert_ne!(daif & (1 << 6), 0);
+    log_debug!("ok");
 }
 
 #[cfg(feature = "qemu-virt")]
@@ -310,6 +304,7 @@ extern "C" fn irq_handler() {
 
 #[cfg(feature = "qemu-virt")]
 extern "C" fn irq_handler() {
+    use crate::PL011_DEVICE;
     // 割り込み番号を取得
     let (interrupt_number, group) = GicRedistributor::get_acknowledge();
     let mut deactivate = true;
