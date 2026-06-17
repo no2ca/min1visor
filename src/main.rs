@@ -195,8 +195,12 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         let gic = init_gicv2(&dtb);
         gic.enable_interrupt();
         gic.send_sgi_to_self();
+
+        // TODO: ここら辺の処理を関数にまとめる
         let pl011_int_id = (*PL011_DEVICE.lock()).interrupt_number;
         log_debug!("pl011 int_id: {}", pl011_int_id);
+        gic.enable_spi(pl011_int_id);
+        PL011_DEVICE.lock().enable_interrupt();
     }
 
     #[cfg(feature = "qemu-virt")]

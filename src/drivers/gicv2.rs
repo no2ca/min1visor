@@ -5,8 +5,9 @@ use crate::{log_debug, log_info};
 pub const GICD_TYPER: usize = 0x004;
 
 const GICD_CTLR: usize = 0x000;
-const _GICD_ISENABLER: usize = 0x100;
-const _GICD_IPRIORITYR: usize = 0x400;
+const GICD_ISENABLER: usize = 0x100;
+const GICD_IPRIORITYR: usize = 0x400;
+const GICD_ITARGETSR: usize = 0x800;
 const GICD_SGIR: usize = 0xF00;
 
 const GICC_CTLR: usize = 0x0000;
@@ -78,6 +79,33 @@ impl GicV2 {
         log_debug!("Sending SGI (SGI_ID={})...", SGI_ID);
         unsafe {
             self.distributor_write32(GICD_SGIR, SGIR_TARGET_SELF | SGI_ID);
+        }
+    }
+    
+    pub fn enable_spi(&self, int_id: u32) {
+        let enable_idx = (int_id / 32) as usize;
+        let enable_bit = 1u32 << (int_id % 32);
+        
+        let target_idx = (int_id / 4) as usize;
+        let target_shift = (int_id % 4) * 8;
+        let target_cpu_mask = 0b0001;
+        
+        unsafe {
+            // 割り込みを有効にするIDを設定
+            // ISENABLER[m/32] |= 1<<(m mod 32)
+            let isenabler_x_addr = self.gicd_base + GICD_ISENABLER + enable_idx * 4;
+            let isenabler_x = core::ptr::read_volatile(isenabler_x_addr as *const u32);
+            core::ptr::write_volatile(isenabler_x_addr as *mut u32, isenabler_x | enable_bit);
+            
+            // 送り先CPUを設定
+            // ITARGETSR[m/4] |= (1<<cpuid)<<((m mod 4)*8)
+            let itarget_x_addr = self.gicd_base + GICD_ITARGETSR + target_idx * 4;
+            let mut itarget_x = core::ptr::read_volatile(itarget_x_addr as *const u32);
+            itarget_x &= !(0xff << target_shift);
+            itarget_x |= target_cpu_mask << target_shift;
+            core::ptr::write_volatile(itarget_x_addr as *mut u32, itarget_x);
+            
+            // TODO: 優先度設定
         }
     }
 }

@@ -1,7 +1,7 @@
 //!
 //! 割り込み制御
 //!
-use crate::{arch::aarch64::{get_daif, registers::*, set_daif_irq}, log_debug, vm};
+use crate::{PL011_DEVICE, arch::aarch64::{get_daif, registers::*, set_daif_irq}, log_debug, log_info, vm};
 use core::arch::global_asm;
 #[cfg(feature = "qemu-virt")]
 use crate::{drivers::generic_timer_gicv3, drivers::gicv3::GicRedistributor, mmio::gicv3, vgicv3};
@@ -204,20 +204,20 @@ irq_handler = sym irq_handler,
 synchronous_handler = sym synchronous_handler,
 );
 
+pub fn enable_irq() {
+    unsafe { set_daif_irq() };
+    let daif = get_daif();
+    crate::log_debug!("DAIF={:#x}", daif);
+    assert_ne!(daif & (1 << 6), 0);
+    log_debug!("ok");
+}
+
 #[cfg(feature = "rpi4")]
 pub fn setup_exception() {
     unsafe extern "C" {
         static exception_table: *const u8;
     }
     unsafe { crate::arch::aarch64::set_vbar_el2(&exception_table as *const _ as usize as u64) };
-    log_debug!("ok");
-}
-
-pub fn enable_irq() {
-    unsafe { set_daif_irq() };
-    let daif = get_daif();
-    crate::log_debug!("DAIF={:#x}", daif);
-    assert_ne!(daif & (1 << 6), 0);
     log_debug!("ok");
 }
 
@@ -288,15 +288,22 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 
 #[cfg(feature = "rpi4")]
 extern "C" fn irq_handler() {
-    use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2, log_debug};
+    use crate::{GICC_BASE, GICD_BASE, PL011_DEVICE, drivers::gicv2::GicV2, log_debug};
     use core::sync::atomic::Ordering::Relaxed;
 
     let gicd_base = GICD_BASE.load(Relaxed);
     let gicc_base = GICC_BASE.load(Relaxed);
     let gic = GicV2::new(gicd_base, gicc_base);
     let iar = gic.interface_read32(crate::drivers::gicv2::GICC_IAR);
+
     let int_id = iar & 0x3ff;
     log_debug!("int_id={}", int_id);
+    let pl011_int_id = (PL011_DEVICE.lock()).interrupt_number;
+    match int_id {
+        153 => pl011_irq_handler(),
+        _ => crate::log_info!("spurious/other irq: {}", int_id),
+    }
+
     unsafe {
         gic.interface_write32(crate::drivers::gicv2::GICC_EOIR, iar);
     }
@@ -324,4 +331,18 @@ extern "C" fn irq_handler() {
         // CPUに割り込みの終了を通知
         GicRedistributor::deactivate(interrupt_number);
     }
+}
+
+fn pl011_irq_handler() {
+    use crate::serial::SerialDevice;
+    let c = (PL011_DEVICE.lock()).getc();
+    if c.is_err() {
+        crate::log_warn!("Failed to get a character");
+        return;
+    }
+    let c = c.unwrap().unwrap_or(0);
+    if c == 0 {
+        return;
+    }
+    log_info!("input: {}", c as char);
 }

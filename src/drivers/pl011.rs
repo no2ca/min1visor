@@ -19,7 +19,8 @@ const UART_SIZE: usize = 0x200;
 const UART_DR: usize = 0x000;
 const UART_FR: usize = 0x018;
 const UART_CR: usize = 0x030; // pl011の機能を設定するレジスタ
-const _UART_IMSC: usize = 0x038; // pl011の割り込みに関する操作をするレジスタ
+const UART_IMSC: usize = 0x038; // pl011の割り込みに関する操作をするレジスタ
+const UART_ICR: usize = 0x044;
 
 // 送信中フラグ
 const _UART_FR_BUSY: u32 = 1 << 3;
@@ -34,7 +35,7 @@ const UART_CR_TXE: u32 = 1 << 8;
 /// UARTが有効か示すビット
 const UART_CR_UARTEN: u32 = 1;
 /// 受信割り込みが有効か示すビット
-const _UART_IMSC_RXIM: u32 = 1 << 4;
+const UART_IMSC_RXIM: u32 = 1 << 4;
 
 // RPi4 (BCM2711) GPIO レジスタ（物理ベース: 0xFE200000）
 const GPIO_BASE: u32 = 0xFE200000;
@@ -103,10 +104,13 @@ impl Pl011 {
     pub fn enable_interrupt(&self) {
         self.enable_uart();
         unsafe {
+            // 既存の割り込み要因をクリア
+            ptr::write_volatile((self.base_address + UART_ICR) as *mut u32, 0x7ff);
+            // RXIMを立てて受信割り込みを有効化
             ptr::write_volatile(
-                (self.base_address + _UART_IMSC) as *mut u32,
-                ptr::read_volatile((self.base_address + _UART_IMSC) as *const u32)
-                    | _UART_IMSC_RXIM,
+                (self.base_address + UART_IMSC) as *mut u32,
+                ptr::read_volatile((self.base_address + UART_IMSC) as *const u32)
+                    | UART_IMSC_RXIM,
             );
         }
     }
