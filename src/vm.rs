@@ -372,6 +372,59 @@ pub fn create_vm(
     )
 }
 
+#[cfg(feature = "rpi4")]
+pub fn create_vm(entry_point: usize) -> (usize, usize) {
+    const GUEST_RAM_BASE: usize = 0x40000000;
+    const GUEST_RAM_SIZE: usize = 0x10000000;
+    const PL011_MMIO_BASE: usize = 0x9000000;
+    const PL011_MMIO_SIZE: usize = 0x1000;
+
+    let ram_physical_address = allocate_pages(GUEST_RAM_SIZE >> PAGE_SHIFT, PAGE_SHIFT)
+        .expect("Failed to allocate memory for VM.");
+    let vm_id = VM_MANAGER.lock().allocate_vm_id();
+
+    setup_hypervisor_registers();
+
+    init_stage2_translation_table();
+
+    map_address_stage2(0x00000000, 0x00000000, PL011_MMIO_BASE, true, true)
+        .expect("Failed to map lower region");
+    map_address_stage2(
+        PL011_MMIO_BASE + PL011_MMIO_SIZE,
+        PL011_MMIO_BASE + PL011_MMIO_SIZE,
+        GUEST_RAM_BASE - PL011_MMIO_BASE - PL011_MMIO_SIZE,
+        true,
+        true,
+    )
+    .expect("Failed to map upper region");
+    map_address_stage2(
+        ram_physical_address,
+        GUEST_RAM_BASE,
+        GUEST_RAM_SIZE,
+        true,
+        true,
+    )
+    .expect("Failed to map guest RAM");
+
+    let mut mmio_handlers = LinkedList::new();
+    let mut pl011_mmio = Box::new(Pl011Mmio::new());
+    let pl011_mmio_ptr = pl011_mmio.as_mut() as *mut _;
+    mmio_handlers.push_back(MmioEntry::new(PL011_MMIO_BASE, PL011_MMIO_SIZE, pl011_mmio));
+
+    let vm = VM::new(
+        vm_id,
+        GUEST_RAM_BASE,
+        ram_physical_address,
+        GUEST_RAM_SIZE,
+        mmio_handlers,
+        pl011_mmio_ptr,
+    );
+
+    VM_MANAGER.lock().push_vm(vm);
+
+    (entry_point, 0)
+}
+
 fn setup_hypervisor_registers() {
     // MIDR_EL1
     unsafe { crate::arch::aarch64::set_vpidr_el2(crate::arch::aarch64::get_midr_el1()) };

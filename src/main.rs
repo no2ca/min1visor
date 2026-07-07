@@ -201,6 +201,10 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         log_debug!("pl011 int_id: {}", pl011_int_id);
         gic.enable_spi(pl011_int_id);
         PL011_DEVICE.lock().enable_interrupt();
+
+        let (boot_address, _) = vm::create_vm(el1_guest as usize);
+        log_info!("Booting VM...");
+        crate::arch::aarch64::AArch64Hypervisor::boot_vm(boot_address, 0)
     }
 
     #[cfg(feature = "qemu-virt")]
@@ -240,6 +244,18 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     loop {
         core::hint::spin_loop();
     }
+}
+
+#[cfg(feature = "rpi4")]
+fn el1_guest() -> ! {
+    const PL011_BASE: usize = 0x9000000;
+    let msg = b"Hello from EL1!\n";
+    for &c in msg {
+        unsafe {
+            core::ptr::write_volatile(PL011_BASE as *mut u32, c as u32);
+        }
+    }
+    loop {}
 }
 
 fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
