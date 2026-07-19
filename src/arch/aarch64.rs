@@ -14,6 +14,7 @@ pub mod registers {
     // SPSR_EL2
     // eretの呼び出し元の権限情報を保持する
     pub const SPSR_EL2_M_EL1H: u64 = 0b0101; // eretの戻り先のレベルとスタックポインタの分離を示す
+    pub const SPSR_EL2_DAIF_MASK: u64 = 0b1111 << 6;
 
     // VTTBR_EL2
     pub const VTTBR_BADDR: u64 = ((1 << 47) - 1) & !1;
@@ -79,7 +80,7 @@ impl AArch64Hypervisor {
     }
     pub fn boot_vm(entry_point: usize, argument: usize) -> ! {
         unsafe {
-            set_spsr_el2(SPSR_EL2_M_EL1H);
+            set_spsr_el2(SPSR_EL2_M_EL1H | SPSR_EL2_DAIF_MASK);
             set_elr_el2(entry_point as u64);
             // EL1 用のスタックポインタを設定
             crate::arch::aarch64::set_sp_el1(
@@ -99,7 +100,7 @@ pub fn get_daif() -> u64 {
             out(reg) daif
         );
     }
-    
+
     daif
 }
 

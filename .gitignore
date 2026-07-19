@@ -12,3 +12,4 @@ opencode.json
 /rpi4/*.scr
 /rpi4/*.img
 /rpi4/boot.txt
+/rpi4/Image

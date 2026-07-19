@@ -36,15 +36,20 @@ mmc dev 1
 fatls mmc 1:1
 ```
 
-U-Boot のプロンプトから手で起動する場合は、`mmc 1:1` から `min1.elf` を読みます。
+U-Boot のプロンプトから手で起動する場合は、Linux Image、ゲスト用 DTB、ハイパーバイザの順に読み込みます。
+ホスト用の `bcm2711-rpi-4-b.dtb` はハイパーバイザの初期化に使い、ゲストには `0x0900_0000` の PL011 を記述した `guest.dtb` を渡します。
 
 ```sh
-if fatload mmc 1:1 $kernel_addr_r min1.elf; then
-    bootelf $kernel_addr_r $fdt_addr $kernel_addr_r
-else
-    echo "Unable to read min1.elf"
-fi
+setenv linux_image_addr 0x10000000
+setenv guest_dtb_addr 0x1f000000
+fatload mmc 1:1 ${linux_image_addr} Image
+fatload mmc 1:1 ${guest_dtb_addr} guest.dtb
+fatload mmc 1:1 ${kernel_addr_r} min1.elf
+go <min1visor-entry> 0x${fdt_addr} ${guest_dtb_addr} ${kernel_addr_r} ${linux_image_addr}
 ```
+
+`<min1visor-entry>` には `readelf -h min1.elf` が表示するエントリーポイントを指定します。
+Linux とゲスト DTB は U-Boot が認識する物理 RAM 内へロードし、ゲストからは Stage 2 変換を通してそれぞれ `0x4000_0000` と `0x4f00_0000` に見えます。
 
 `-sd` で動かない QEMU では、元の `-drive if=sd` 指定に戻して試せます。
 

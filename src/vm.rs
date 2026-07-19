@@ -373,38 +373,65 @@ pub fn create_vm(
 }
 
 #[cfg(feature = "rpi4")]
-pub fn create_vm(entry_point: usize) -> (usize, usize) {
+pub fn create_vm(
+    linux_image_address: usize,
+    dtb_address: usize,
+    dtb_size: usize,
+) -> (usize, usize) {
+    const HOST_RAM_BASE: usize = 0x10000000;
     const GUEST_RAM_BASE: usize = 0x40000000;
-    const GUEST_RAM_SIZE: usize = 0x10000000;
+    const RAM_SIZE: usize = 0x10000000;
+    const LINUX_IMAGE_ALIGNMENT: usize = 0x200000;
     const PL011_MMIO_BASE: usize = 0x9000000;
     const PL011_MMIO_SIZE: usize = 0x1000;
 
-    let ram_physical_address = allocate_pages(GUEST_RAM_SIZE >> PAGE_SHIFT, PAGE_SHIFT)
-        .expect("Failed to allocate memory for VM.");
+    let host_ram_end = HOST_RAM_BASE
+        .checked_add(RAM_SIZE)
+        .expect("Host RAM range overflow");
+    assert!(
+        (HOST_RAM_BASE..host_ram_end).contains(&linux_image_address),
+        "Linux Image is outside host backing RAM"
+    );
+    let dtb_end = dtb_address
+        .checked_add(dtb_size)
+        .expect("DTB range overflow");
+    assert!(
+        dtb_address >= HOST_RAM_BASE && dtb_end <= host_ram_end,
+        "DTB is outside host backing RAM"
+    );
+
+    let header = unsafe { &*(linux_image_address as *const KernelHeader) };
+    assert_eq!(header.magic, 0x644D5241, "Invalid Linux Image magic");
+    let image_base = linux_image_address
+        .checked_sub(header.text_offset as usize)
+        .expect("Invalid Linux Image text offset");
+    assert_eq!(
+        image_base & (LINUX_IMAGE_ALIGNMENT - 1),
+        0,
+        "Linux Image base is not 2 MiB aligned"
+    );
+    if header.image_size != 0 {
+        let image_end = linux_image_address
+            .checked_add(header.image_size as usize)
+            .expect("Linux Image range overflow");
+        assert!(
+            image_end <= host_ram_end,
+            "Linux Image exceeds host backing RAM"
+        );
+        assert!(
+            image_end <= dtb_address || dtb_end <= linux_image_address,
+            "Linux Image overlaps DTB"
+        );
+    }
+
     let vm_id = VM_MANAGER.lock().allocate_vm_id();
 
     setup_hypervisor_registers();
 
     init_stage2_translation_table();
 
-    map_address_stage2(0x00000000, 0x00000000, PL011_MMIO_BASE, true, true)
-        .expect("Failed to map lower region");
-    map_address_stage2(
-        PL011_MMIO_BASE + PL011_MMIO_SIZE,
-        PL011_MMIO_BASE + PL011_MMIO_SIZE,
-        GUEST_RAM_BASE - PL011_MMIO_BASE - PL011_MMIO_SIZE,
-        true,
-        true,
-    )
-    .expect("Failed to map upper region");
-    map_address_stage2(
-        ram_physical_address,
-        GUEST_RAM_BASE,
-        GUEST_RAM_SIZE,
-        true,
-        true,
-    )
-    .expect("Failed to map guest RAM");
+    map_address_stage2(HOST_RAM_BASE, GUEST_RAM_BASE, RAM_SIZE, true, true)
+        .expect("Failed to map guest RAM");
 
     let mut mmio_handlers = LinkedList::new();
     let mut pl011_mmio = Box::new(Pl011Mmio::new());
@@ -414,15 +441,31 @@ pub fn create_vm(entry_point: usize) -> (usize, usize) {
     let vm = VM::new(
         vm_id,
         GUEST_RAM_BASE,
-        ram_physical_address,
-        GUEST_RAM_SIZE,
+        HOST_RAM_BASE,
+        RAM_SIZE,
         mmio_handlers,
         pl011_mmio_ptr,
     );
 
+    let guest_entry_point = GUEST_RAM_BASE + (linux_image_address - HOST_RAM_BASE);
+    let guest_dtb_address = GUEST_RAM_BASE + (dtb_address - HOST_RAM_BASE);
+    log_debug!(
+        "Linux Image placed at host={:#X}, guest={:#X}, size={:#X}, text_offset={:#X}",
+        linux_image_address,
+        guest_entry_point,
+        header.image_size,
+        header.text_offset
+    );
+    log_debug!(
+        "Guest DTB placed at host={:#X}, guest={:#X}, size={:#X}",
+        dtb_address,
+        guest_dtb_address,
+        dtb_size
+    );
+
     VM_MANAGER.lock().push_vm(vm);
 
-    (entry_point, 0)
+    (guest_entry_point, guest_dtb_address)
 }
 
 fn setup_hypervisor_registers() {

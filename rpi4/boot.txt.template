@@ -1,8 +1,18 @@
 setenv autostart yes
+setenv bootpart @BOOTPART@
+setenv linux_image_addr 0x10000000
+setenv guest_dtb_addr 0x1f000000
 
-setenv bootpart 1:1
-if fatload mmc ${bootpart} $kernel_addr_r min1.elf; then
-	go 0xdeadbeef 0x$fdt_addr $kernel_addr_r
+if fatload mmc ${bootpart} ${linux_image_addr} Image; then
+	if fatload mmc ${bootpart} ${guest_dtb_addr} guest.dtb; then
+		if fatload mmc ${bootpart} ${kernel_addr_r} min1.elf; then
+			go @HYPERVISOR_ENTRY@ 0x${fdt_addr} ${guest_dtb_addr} ${kernel_addr_r} ${linux_image_addr}
+		else
+			echo "Unable to read min1.elf"
+		fi
+	else
+		echo "Unable to read guest.dtb"
+	fi
 else
-	echo "Unable to read min1.elf"
+	echo "Unable to read Image"
 fi

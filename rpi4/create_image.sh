@@ -22,6 +22,8 @@ FILES=(
     "bcm2711-rpi-4-b.dtb"
     "boot.scr"
     "min1.elf"
+    "Image"
+    "guest.dtb"
 )
 
 cleanup() {
@@ -47,29 +49,34 @@ if [ -f "$RPI4_IMAGE" ]; then
     rm -f "$RPI4_IMAGE"
 fi
 
-echo "[1/5] Creating $RPI4_IMAGE (${RPI4_IMAGE_SIZE_MB} MiB) ..."
+echo "[1/6] Creating $RPI4_IMAGE (${RPI4_IMAGE_SIZE_MB} MiB) ..."
 dd if=/dev/zero of="$RPI4_IMAGE" bs=1M count="$RPI4_IMAGE_SIZE_MB"
 
-echo "[2/5] Creating FAT32 partition ..."
+echo "[2/6] Creating FAT32 partition ..."
 sudo sfdisk "$RPI4_IMAGE" << EOF
 $RPI4_PARTITION_START_SECTOR,,b,*
 EOF
 
-echo "[3/5] Formatting partition ..."
+echo "[3/6] Formatting partition ..."
 sudo mkfs.vfat -F 32 --offset="$RPI4_PARTITION_START_SECTOR" "$RPI4_IMAGE"
 
-echo "[4/5] Generating boot.scr ..."
+echo "[4/6] Generating guest DTB and boot.scr ..."
 ENTRY_POINT=$(readelf -h "$RPI4_KERNEL" \
     | grep "Entry point address" \
     | awk '{print $4}')
 echo "entry point: $ENTRY_POINT"
-sed -i "s/^.*go 0x[0-9a-fA-F]\+ \(0x\$fdt_addr \$kernel_addr_r\)$/\tgo $ENTRY_POINT \1/" $RPI4_DIR/boot.txt
-sed -i "s/^setenv bootpart .*/setenv bootpart $RPI4_BOOTPART/" $RPI4_DIR/boot.txt
+
+dtc -I dts -O dtb -o "$RPI4_DIR/guest.dtb" "$RPI4_DIR/guest.dts"
+sed \
+    -e "s/@HYPERVISOR_ENTRY@/$ENTRY_POINT/" \
+    -e "s/@BOOTPART@/$RPI4_BOOTPART/" \
+    "$RPI4_DIR/boot.txt.template" > "$RPI4_DIR/boot.txt"
 
 mkimage -A arm64 -T script -C none -n "RPi4 Boot Script" \
     -d "$RPI4_DIR/boot.txt" "$RPI4_DIR/boot.scr"
 
-echo "[5/5] Mounting image ..."
+
+echo "[5/6] Mounting image ..."
 LOOP_DEV=$(sudo losetup -Pf --show "$RPI4_IMAGE")
 sudo mkdir -p "$RPI4_MOUNT_DIR"
 sudo mount "${LOOP_DEV}p1" "$RPI4_MOUNT_DIR"

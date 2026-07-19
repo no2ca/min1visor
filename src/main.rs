@@ -103,7 +103,7 @@ pub static GICC_BASE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "qemu-virt")]
 const ARGC: usize = 2;
 #[cfg(feature = "rpi4")]
-const ARGC: usize = 3;
+const ARGC: usize = 5;
 
 #[cfg(feature = "qemu-virt")]
 const DTB_ARG_INDEX: usize = 0;
@@ -113,7 +113,11 @@ const DTB_ARG_INDEX: usize = 1;
 #[cfg(feature = "qemu-virt")]
 const ELF_ARG_INDEX: usize = 1;
 #[cfg(feature = "rpi4")]
-const ELF_ARG_INDEX: usize = 2;
+const GUEST_DTB_ARG_INDEX: usize = 2;
+#[cfg(feature = "rpi4")]
+const ELF_ARG_INDEX: usize = 3;
+#[cfg(feature = "rpi4")]
+const LINUX_IMAGE_ARG_INDEX: usize = 4;
 
 struct GlobalAllocator {}
 #[global_allocator]
@@ -172,7 +176,22 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         .to_str()
         .expect("Failed to get ELF address argument");
     let elf_address = str_to_usize(elf_addr_str).expect("Failed to convert the address");
-    setup_memory(&dtb, dtb_address, elf_address, stack_pointer);
+    #[cfg(feature = "rpi4")]
+    let linux_image_address = {
+        let linux_image_addr_str = unsafe { CStr::from_ptr(args[LINUX_IMAGE_ARG_INDEX]) }
+            .to_str()
+            .expect("Failed to get Linux Image address argument");
+        str_to_usize(linux_image_addr_str).expect("Failed to convert the Linux Image address")
+    };
+    #[cfg(feature = "qemu-virt")]
+    let linux_image_address = usize::MAX;
+    setup_memory(
+        &dtb,
+        dtb_address,
+        elf_address,
+        stack_pointer,
+        linux_image_address,
+    );
     log_debug!("setup_memory: ok");
 
     // ページングのセットアップ
@@ -188,7 +207,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     // 例外ハンドラのセットアップ
     crate::exception::setup_exception();
     crate::exception::enable_irq();
-    
+
     #[cfg(feature = "rpi4")]
     {
         // 割り込みコントローラのセットアップ
@@ -202,9 +221,24 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         gic.enable_spi(pl011_int_id);
         PL011_DEVICE.lock().enable_interrupt();
 
-        let (boot_address, _) = vm::create_vm(el1_guest as usize);
-        log_info!("Booting VM...");
-        crate::arch::aarch64::AArch64Hypervisor::boot_vm(boot_address, 0)
+        let guest_dtb_addr_str = unsafe { CStr::from_ptr(args[GUEST_DTB_ARG_INDEX]) }
+            .to_str()
+            .expect("Failed to get guest DTB address argument");
+        let guest_dtb_address =
+            str_to_usize(guest_dtb_addr_str).expect("Failed to convert the guest DTB address");
+        let guest_dtb = dtb::Dtb::new(guest_dtb_address).expect("Invalid guest DTB");
+
+        let (boot_address, argument) = vm::create_vm(
+            linux_image_address,
+            guest_dtb_address,
+            guest_dtb.get_total_size(),
+        );
+        log_info!(
+            "Booting Linux at {:#X} with DTB at {:#X}...",
+            boot_address,
+            argument
+        );
+        crate::arch::aarch64::AArch64Hypervisor::boot_vm(boot_address, argument)
     }
 
     #[cfg(feature = "qemu-virt")]
@@ -247,7 +281,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 }
 
 #[cfg(feature = "rpi4")]
-fn el1_guest() -> ! {
+pub fn el1_guest() -> ! {
     const PL011_BASE: usize = 0x9000000;
     let msg = b"Hello from EL1!\n";
     for &c in msg {
@@ -287,7 +321,8 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
     {
         let pl011_base = translate_rpi4_peripheral_address(pl011_base);
         let interrupt_number = 32 + u32::from_be(interrupts[1]);
-        let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number) else {
+        let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number)
+        else {
             return Err(7);
         };
         *PL011_DEVICE.lock() = pl011;
@@ -303,7 +338,8 @@ fn init_pl011_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
             interrupt_number = gicv3::GIC_SPI_BASE + u32::from_be(interrupts[1]);
         }
 
-        let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number) else {
+        let Ok(pl011) = drivers::pl011::Pl011::new(pl011_base, pl011_range, interrupt_number)
+        else {
             return Err(7);
         };
         *PL011_DEVICE.lock() = pl011;
@@ -333,7 +369,13 @@ fn translate_rpi4_peripheral_address(address: usize) -> usize {
     address
 }
 
-pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stack_pointer: usize) {
+pub fn setup_memory(
+    dtb: &dtb::Dtb,
+    dtb_address: usize,
+    elf_address: usize,
+    stack_pointer: usize,
+    reserved_start: usize,
+) {
     let memory = dtb
         .search_node(b"memory", None)
         .expect("Expected memory node.");
@@ -368,9 +410,11 @@ pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stac
     let stack_start = stack_end - STACK_SIZE;
     crate::log_info!("Reserve [{:#X} ~ {:#X}] for Stack", stack_start, stack_end);
 
-    // メモリを初期化
-    crate::log_info!("Initialize heap [{:#X} ~ {:#X}]", elf_end, stack_start);
-    unsafe { ALLOCATOR.lock().init(elf_end, stack_start) };
+    // U-Boot がロードしたゲスト領域とスタックを避けてヒープを初期化
+    let heap_end = stack_start.min(reserved_start);
+    assert!(elf_end < heap_end, "No memory available for heap");
+    crate::log_info!("Initialize heap [{:#X} ~ {:#X}]", elf_end, heap_end);
+    unsafe { ALLOCATOR.lock().init(elf_end, heap_end - elf_end) };
 }
 
 fn str_to_usize(s: &str) -> Option<usize> {
