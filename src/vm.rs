@@ -135,6 +135,11 @@ impl VM {
                 return e.handler.read(address - e.base_address, access_width);
             }
         }
+        log_debug!(
+            "Failed to handle mmio. (address={:#x}, access_width={})",
+            address,
+            access_width
+        );
         Err(())
     }
 
@@ -151,6 +156,12 @@ impl VM {
                     .write(address - e.base_address, access_width, value);
             }
         }
+        log_debug!(
+            "Failed to handle mmio. (address={:#x}, access_width={}, value={})",
+            address,
+            access_width,
+            value
+        );
         Err(())
     }
 

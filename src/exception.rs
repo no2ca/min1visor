@@ -1,10 +1,14 @@
 //!
 //! 割り込み制御
 //!
-use crate::{PL011_DEVICE, arch::aarch64::{get_daif, registers::*, set_daif_irq}, log_debug, log_info, vm};
-use core::arch::global_asm;
+use crate::{
+    PL011_DEVICE,
+    arch::aarch64::{get_daif, registers::*, set_daif_irq},
+    log_debug, log_info, vm,
+};
 #[cfg(feature = "qemu-virt")]
 use crate::{drivers::generic_timer_gicv3, drivers::gicv3::GicRedistributor, mmio::gicv3, vgicv3};
+use core::arch::global_asm;
 
 #[repr(C)]
 pub struct Registers {

@@ -137,11 +137,12 @@ impl Pl011 {
             ptr::write_volatile(
                 (self.base_address + UART_IMSC) as *mut u32,
                 ptr::read_volatile((self.base_address + UART_IMSC) as *const u32)
-                    | UART_IMSC_RXIM | UART_IMSC_RTIM,
+                    | UART_IMSC_RXIM
+                    | UART_IMSC_RTIM,
             );
         }
     }
-    
+
     pub fn clear_interrpt(&self) {
         unsafe { core::ptr::write_volatile((self.base_address + UART_ICR) as *mut u32, 0x7ff) };
     }
