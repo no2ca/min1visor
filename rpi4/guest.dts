@@ -43,13 +43,11 @@
 	};
 
 	gic: interrupt-controller@8000000 {
-		compatible = "arm,gic-v3";
+		compatible = "arm,cortex-a15-gic";
 		#interrupt-cells = <3>;
 		interrupt-controller;
-		#redistributor-regions = <1>;
 		reg = <0x0 0x08000000 0x0 0x10000>,
-		      <0x0 0x080a0000 0x0 0x20000>;
-		interrupts = <1 9 4>;
+		      <0x0 0x08010000 0x0 0x10000>;
 	};
 
 	timer {
