@@ -5,6 +5,8 @@ use crate::arch::aarch64::registers::*;
 use crate::drivers::virtio_blk::VirtioBlk;
 #[cfg(feature = "qemu-virt")]
 use crate::fat32::Fat32;
+#[cfg(feature = "rpi4")]
+use crate::mmio::gicv2::GicDistributorMmio;
 use crate::mmio::pl011::Pl011Mmio;
 #[cfg(feature = "qemu-virt")]
 use crate::mmio::virtio_blk::VirtioBlkMmio;
@@ -393,6 +395,7 @@ pub fn create_vm(
     const GUEST_RAM_BASE: usize = 0x40000000;
     const RAM_SIZE: usize = 0x10000000;
     const LINUX_IMAGE_ALIGNMENT: usize = 0x200000;
+    const GICD_MMIO_BASE: usize = 0x8000000;
     const PL011_MMIO_BASE: usize = 0x9000000;
     const PL011_MMIO_SIZE: usize = 0x1000;
 
@@ -448,6 +451,11 @@ pub fn create_vm(
     let mut pl011_mmio = Box::new(Pl011Mmio::new());
     let pl011_mmio_ptr = pl011_mmio.as_mut() as *mut _;
     mmio_handlers.push_back(MmioEntry::new(PL011_MMIO_BASE, PL011_MMIO_SIZE, pl011_mmio));
+    mmio_handlers.push_back(MmioEntry::new(
+        GICD_MMIO_BASE,
+        GicDistributorMmio::MMIO_SIZE,
+        Box::new(GicDistributorMmio::new()),
+    ));
 
     let vm = VM::new(
         vm_id,

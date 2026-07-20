@@ -48,6 +48,7 @@ mod elf;
 mod exception;
 mod paging;
 mod mmio {
+    pub mod gicv2;
     pub mod gicv3;
     pub mod pl011;
     pub mod virtio_blk;
