@@ -195,12 +195,6 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     );
     log_debug!("setup_memory: ok");
 
-    // ページングのセットアップ
-    paging::init_stage2_translation_table();
-    paging::map_address_stage2(0x40000000, 0x40000000, 0x80000000, true, true)
-        .expect("Failed to map memory");
-    log_debug!("init_stage2_translation_table: ok");
-
     // hypervisorモードのセットアップ
     crate::arch::aarch64::AArch64Hypervisor::setup_hypervisor();
     log_debug!("setup_hypervisor: ok");
@@ -412,6 +406,10 @@ pub fn setup_memory(
     crate::log_info!("Reserve [{:#X} ~ {:#X}] for Stack", stack_start, stack_end);
 
     // U-Boot がロードしたゲスト領域とスタックを避けてヒープを初期化
+    // TODO: reserved_start (= linux_image_addr) が HOST_RAM_BASE (0x10000000) と一致している前提。
+    //       Image のロード先を上にずらすとヒープがゲストRAMと重なり、ゲストが
+    //       ハイパーバイザのヒープ(ステージ2ページテーブル含む)を破壊できる。
+    //       HOST_RAM_BASE との min を取るか、create_vm 側で非重複を assert する。
     let heap_end = stack_start.min(reserved_start);
     assert!(elf_end < heap_end, "No memory available for heap");
     crate::log_info!("Initialize heap [{:#X} ~ {:#X}]", elf_end, heap_end);
