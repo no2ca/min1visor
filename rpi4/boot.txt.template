@@ -9,10 +9,9 @@ if fatload mmc ${bootpart} ${linux_image_addr} Image; then
 	if fatload mmc ${bootpart} ${guest_dtb_addr} guest.dtb; then
 		if fatload mmc ${bootpart} ${kernel_addr_r} min1.elf; then
 			if fatload mmc ${bootpart} ${rootfs_addr} rootfs.cpio.gz; then
-				setexpr initrd_end ${rootfs_ipa} + 0x${filesize}
 				fdt addr ${guest_dtb_addr}
 				fdt resize
-				fdt chosen ${rootfs_ipa} 0x${initrd_end}
+				fdt chosen ${rootfs_ipa} 0x${filesize}
 			else
 				echo "rootfs.cpio.gz not found; booting without initramfs"
 			fi
