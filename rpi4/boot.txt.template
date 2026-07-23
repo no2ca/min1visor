@@ -2,10 +2,20 @@ setenv autostart yes
 setenv bootpart @BOOTPART@
 setenv linux_image_addr 0x10000000
 setenv guest_dtb_addr 0x1f000000
+setenv rootfs_addr 0x18000000
+setenv rootfs_ipa 0x48000000
 
 if fatload mmc ${bootpart} ${linux_image_addr} Image; then
 	if fatload mmc ${bootpart} ${guest_dtb_addr} guest.dtb; then
 		if fatload mmc ${bootpart} ${kernel_addr_r} min1.elf; then
+			if fatload mmc ${bootpart} ${rootfs_addr} rootfs.cpio.gz; then
+				setexpr initrd_end ${rootfs_ipa} + 0x${filesize}
+				fdt addr ${guest_dtb_addr}
+				fdt resize
+				fdt chosen ${rootfs_ipa} 0x${initrd_end}
+			else
+				echo "rootfs.cpio.gz not found; booting without initramfs"
+			fi
 			go @HYPERVISOR_ENTRY@ 0x${fdt_addr} ${guest_dtb_addr} ${kernel_addr_r} ${linux_image_addr}
 		else
 			echo "Unable to read min1.elf"

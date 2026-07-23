@@ -24,6 +24,7 @@ FILES=(
     "min1.elf"
     "Image"
     "guest.dtb"
+    "rootfs.cpio.gz"
 )
 
 cleanup() {
