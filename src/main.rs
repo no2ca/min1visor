@@ -228,6 +228,7 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
             guest_dtb_address,
             guest_dtb.get_total_size(),
         );
+        gic.enable_ppi(27);
         log_info!(
             "Booting Linux at {:#X} with DTB at {:#X}...",
             boot_address,

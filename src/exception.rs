@@ -292,7 +292,7 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 
 #[cfg(feature = "rpi4")]
 extern "C" fn irq_handler() {
-    use crate::{GICC_BASE, GICD_BASE, PL011_DEVICE, drivers::gicv2::GicV2, log_debug};
+    use crate::{GICC_BASE, GICD_BASE, PL011_DEVICE, drivers::gicv2::GicV2};
     use core::sync::atomic::Ordering::Relaxed;
 
     let gicd_base = GICD_BASE.load(Relaxed);
@@ -301,10 +301,12 @@ extern "C" fn irq_handler() {
     let iar = gic.interface_read32(crate::drivers::gicv2::GICC_IAR);
 
     let int_id = iar & 0x3ff;
-    log_debug!("int_id={}", int_id);
     let pl011_int_id = (PL011_DEVICE.lock()).interrupt_number;
     if int_id == pl011_int_id {
         pl011_irq_handler();
+    } else if int_id == 27 {
+        gic.disable_interrupt(27);
+        crate::mmio::gicv2::inject_interrupt(27);
     } else {
         crate::log_info!("spurious/other irq: {}", int_id);
     }

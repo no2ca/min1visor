@@ -2,7 +2,11 @@
 //! GICv2 の MMIO Driver
 //!
 
-use crate::vm::MmioHandler;
+use crate::{
+    arch::aarch64::{get_hcr_el2, registers::HCR_EL2_VI, set_hcr_el2},
+    mutex::Mutex,
+    vm::MmioHandler,
+};
 
 const GICD_CTLR: usize = 0x000;
 const GICD_TYPER: usize = 0x004;
@@ -18,6 +22,34 @@ const GICC_EOIR: usize = 0x010;
 const GICC_IIDR: usize = 0x0FC;
 
 const GICC_IAR_SPURIOUS_INTERRUPT_ID: u64 = 1023;
+
+static PENDING: Mutex<u64> = Mutex::new(0);
+
+pub fn inject_interrupt(int_id: u32) {
+    assert!(int_id < u64::BITS, "Interrupt ID is out of range");
+
+    let mut pending = PENDING.lock();
+    *pending |= 1u64 << int_id;
+
+    let hcr_el2 = get_hcr_el2();
+    unsafe { set_hcr_el2(hcr_el2 | HCR_EL2_VI) };
+}
+
+fn acknowledge_interrupt() -> u64 {
+    let mut pending = PENDING.lock();
+    if *pending == 0 {
+        return GICC_IAR_SPURIOUS_INTERRUPT_ID;
+    }
+
+    let int_id = pending.trailing_zeros();
+    *pending &= !(1u64 << int_id);
+    if *pending == 0 {
+        let hcr_el2 = get_hcr_el2();
+        unsafe { set_hcr_el2(hcr_el2 & !HCR_EL2_VI) };
+    }
+
+    int_id as u64
+}
 
 pub struct GicDistributorMmio {
     ctlr: u32,
@@ -75,7 +107,7 @@ impl MmioHandler for GicCpuInterfaceMmio {
             GICC_CTLR => self.ctlr as u64,
             GICC_PMR => self.pmr as u64,
             GICC_BPR => self.bpr as u64,
-            GICC_IAR => GICC_IAR_SPURIOUS_INTERRUPT_ID,
+            GICC_IAR => acknowledge_interrupt(),
             GICC_IIDR => 0x0202143B,
             _ => 0,
         };
@@ -87,7 +119,18 @@ impl MmioHandler for GicCpuInterfaceMmio {
             GICC_CTLR => self.ctlr = value as u32,
             GICC_PMR => self.pmr = value as u32,
             GICC_BPR => self.bpr = value as u32,
-            GICC_EOIR => {}
+            GICC_EOIR =>
+            {
+                #[cfg(feature = "rpi4")]
+                if value & 0x3ff == 27 {
+                    use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2};
+                    use core::sync::atomic::Ordering::Relaxed;
+
+                    let gicd_base = GICD_BASE.load(Relaxed);
+                    let gicc_base = GICC_BASE.load(Relaxed);
+                    GicV2::new(gicd_base, gicc_base).enable_ppi(27);
+                }
+            }
             _ => {}
         }
         Ok(())

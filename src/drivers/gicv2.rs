@@ -6,6 +6,7 @@ pub const GICD_TYPER: usize = 0x004;
 
 const GICD_CTLR: usize = 0x000;
 const GICD_ISENABLER: usize = 0x100;
+const GICD_ICENABLER: usize = 0x180;
 const GICD_IPRIORITYR: usize = 0x400;
 const GICD_ITARGETSR: usize = 0x800;
 const GICD_SGIR: usize = 0xF00;
@@ -79,6 +80,26 @@ impl GicV2 {
         log_debug!("Sending SGI (SGI_ID={})...", SGI_ID);
         unsafe {
             self.distributor_write32(GICD_SGIR, SGIR_TARGET_SELF | SGI_ID);
+        }
+    }
+
+    pub fn disable_interrupt(&self, int_id: u32) {
+        let disable_idx = (int_id / 32) as usize;
+        let disable_bit = 1u32 << (int_id % 32);
+
+        unsafe {
+            self.distributor_write32(GICD_ICENABLER + disable_idx * 4, disable_bit);
+        }
+    }
+
+    pub fn enable_ppi(&self, int_id: u32) {
+        assert!(int_id < 32, "PPI interrupt ID is out of range");
+
+        let enable_idx = (int_id / 32) as usize;
+        let enable_bit = 1u32 << (int_id % 32);
+
+        unsafe {
+            self.distributor_write32(GICD_ISENABLER + enable_idx * 4, enable_bit);
         }
     }
 

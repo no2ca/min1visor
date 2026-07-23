@@ -6,6 +6,7 @@ pub mod registers {
     // HCR_EL2: 下位レベルでの挙動を操作するレジスタ群
     pub const HCR_EL2_API: u64 = 1 << 41;
     pub const HCR_EL2_RW: u64 = 1 << 31; // EL1でAArch64として動作させるためのメンバ
+    pub const HCR_EL2_VI: u64 = 1 << 7;
     pub const HCR_EL2_AMO: u64 = 1 << 5;
     pub const HCR_EL2_IMO: u64 = 1 << 4;
     pub const HCR_EL2_FMO: u64 = 1 << 3;
@@ -140,6 +141,12 @@ pub fn get_currentel() -> u64 {
     let currentel: u64;
     unsafe { asm!("mrs {}, currentel", out(reg) currentel) };
     currentel
+}
+
+pub fn get_hcr_el2() -> u64 {
+    let hcr_el2: u64;
+    unsafe { asm!("mrs {}, hcr_el2", out(reg) hcr_el2) };
+    hcr_el2
 }
 
 pub unsafe fn set_hcr_el2(hcr_el2: u64) {
