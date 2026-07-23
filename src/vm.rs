@@ -6,7 +6,7 @@ use crate::drivers::virtio_blk::VirtioBlk;
 #[cfg(feature = "qemu-virt")]
 use crate::fat32::Fat32;
 #[cfg(feature = "rpi4")]
-use crate::mmio::gicv2::GicDistributorMmio;
+use crate::mmio::gicv2::{GicCpuInterfaceMmio, GicDistributorMmio};
 use crate::mmio::pl011::Pl011Mmio;
 #[cfg(feature = "qemu-virt")]
 use crate::mmio::virtio_blk::VirtioBlkMmio;
@@ -396,6 +396,7 @@ pub fn create_vm(
     const RAM_SIZE: usize = 0x10000000;
     const LINUX_IMAGE_ALIGNMENT: usize = 0x200000;
     const GICD_MMIO_BASE: usize = 0x8000000;
+    const GICC_MMIO_BASE: usize = 0x8010000;
     const PL011_MMIO_BASE: usize = 0x9000000;
     const PL011_MMIO_SIZE: usize = 0x1000;
 
@@ -455,6 +456,11 @@ pub fn create_vm(
         GICD_MMIO_BASE,
         GicDistributorMmio::MMIO_SIZE,
         Box::new(GicDistributorMmio::new()),
+    ));
+    mmio_handlers.push_back(MmioEntry::new(
+        GICC_MMIO_BASE,
+        GicCpuInterfaceMmio::MMIO_SIZE,
+        Box::new(GicCpuInterfaceMmio::new()),
     ));
 
     let vm = VM::new(
