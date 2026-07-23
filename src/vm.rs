@@ -463,6 +463,10 @@ pub fn create_vm(
         Box::new(GicCpuInterfaceMmio::new()),
     ));
 
+    // ゲストのタイマーをどれだけ遅延させるかを決める
+    // 今回は軽い操作しかしていないため0に設定している
+    unsafe { crate::arch::aarch64::set_cntvoff_el2(0) };
+
     let vm = VM::new(
         vm_id,
         GUEST_RAM_BASE,
