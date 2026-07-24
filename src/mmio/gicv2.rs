@@ -117,6 +117,7 @@ impl MmioHandler for GicCpuInterfaceMmio {
             GICC_CTLR => self.ctlr = value as u32,
             GICC_PMR => self.pmr = value as u32,
             GICC_BPR => self.bpr = value as u32,
+            #[cfg(feature = "rpi4")]
             GICC_EOIR =>
             {
                 use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2};
@@ -129,12 +130,12 @@ impl MmioHandler for GicCpuInterfaceMmio {
                 if value & 0x3ff == 27 {
                     gic.enable_ppi(27);
                 }
-                // if value & 0x3ff == PL011_INT_ID.into() {
-                //     let pl011_mmio = unsafe { &mut *get_active_vm().get_pl011_mmio() };
-                //     if pl011_mmio.is_rx_pending() {
-                //         gic.enable_ppi(PL011_INT_ID);
-                //     }
-                // }
+                if value & 0x3ff == PL011_INT_ID.into() {
+                    let pl011_mmio = unsafe { &mut *get_active_vm().get_pl011_mmio() };
+                    if pl011_mmio.is_rx_pending() {
+                        crate::mmio::gicv2::inject_interrupt(PL011_INT_ID);
+                    }
+                }
             }
             _ => {}
         }

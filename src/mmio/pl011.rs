@@ -90,7 +90,7 @@ impl Pl011Mmio {
     pub fn is_rx_pending(&mut self) -> bool {
         let ris = self.read(UART_RIS, 64).unwrap_or(0);
         let imsc =  self.read(UART_IMSC, 64).unwrap_or(0);
-        ris & imsc == 1
+        ris & imsc != 0
     }
 }
 
