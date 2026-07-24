@@ -2,9 +2,8 @@
 //! 割り込み制御
 //!
 use crate::{
-    PL011_DEVICE,
     arch::aarch64::{get_daif, registers::*, set_daif_irq},
-    log_debug, log_info, vm,
+    log_debug, vm,
 };
 #[cfg(feature = "qemu-virt")]
 use crate::{drivers::generic_timer_gicv3, drivers::gicv3::GicRedistributor, mmio::gicv3, vgicv3};
@@ -303,8 +302,9 @@ extern "C" fn irq_handler() {
     let int_id = iar & 0x3ff;
     let pl011_int_id = (PL011_DEVICE.lock()).interrupt_number;
     if int_id == pl011_int_id {
-        pl011_irq_handler();
+        vm::input_uart();
     } else if int_id == 27 {
+        // TODO: タイマー割り込みの番号はDTBから取得する方式にする
         gic.disable_interrupt(27);
         crate::mmio::gicv2::inject_interrupt(27);
     } else {
@@ -338,24 +338,4 @@ extern "C" fn irq_handler() {
         // CPUに割り込みの終了を通知
         GicRedistributor::deactivate(interrupt_number);
     }
-}
-
-fn pl011_irq_handler() {
-    use crate::serial::SerialDevice;
-    loop {
-        let c = (PL011_DEVICE.lock()).getc();
-        match c {
-            Ok(Some(ch)) => {
-                log_info!("input: {}", ch as char);
-            }
-            Ok(None) => {
-                break;
-            }
-            Err(e) => {
-                crate::log_warn!("getc failed: {:?}", e);
-                break;
-            }
-        }
-    }
-    PL011_DEVICE.lock().clear_interrpt();
 }

@@ -3,9 +3,7 @@
 //!
 
 use crate::{
-    arch::aarch64::{get_hcr_el2, registers::HCR_EL2_VI, set_hcr_el2},
-    mutex::Mutex,
-    vm::MmioHandler,
+    arch::aarch64::{get_hcr_el2, registers::HCR_EL2_VI, set_hcr_el2}, mmio::pl011::PL011_INT_ID, mutex::Mutex, vm::{MmioHandler, get_active_vm},
 };
 
 const GICD_CTLR: usize = 0x000;
@@ -121,15 +119,22 @@ impl MmioHandler for GicCpuInterfaceMmio {
             GICC_BPR => self.bpr = value as u32,
             GICC_EOIR =>
             {
-                #[cfg(feature = "rpi4")]
-                if value & 0x3ff == 27 {
-                    use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2};
-                    use core::sync::atomic::Ordering::Relaxed;
+                use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2};
+                use core::sync::atomic::Ordering::Relaxed;
 
-                    let gicd_base = GICD_BASE.load(Relaxed);
-                    let gicc_base = GICC_BASE.load(Relaxed);
-                    GicV2::new(gicd_base, gicc_base).enable_ppi(27);
+                let gicd_base = GICD_BASE.load(Relaxed);
+                let gicc_base = GICC_BASE.load(Relaxed);
+                let gic = GicV2::new(gicd_base, gicc_base);
+
+                if value & 0x3ff == 27 {
+                    gic.enable_ppi(27);
                 }
+                // if value & 0x3ff == PL011_INT_ID.into() {
+                //     let pl011_mmio = unsafe { &mut *get_active_vm().get_pl011_mmio() };
+                //     if pl011_mmio.is_rx_pending() {
+                //         gic.enable_ppi(PL011_INT_ID);
+                //     }
+                // }
             }
             _ => {}
         }

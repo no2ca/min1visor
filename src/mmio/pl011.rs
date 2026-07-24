@@ -13,6 +13,7 @@ const UART_FR: usize = 0x018;
 const UART_CR: usize = 0x030;
 const UART_IMSC: usize = 0x038;
 const UART_RIS: usize = 0x03C;
+const UART_MIS: usize = 0x040;
 const UART_ICR: usize = 0x044;
 const UART_PERIPH_ID0: usize = 0xFE0;
 const UART_PERIPH_ID1: usize = 0xFE4;
@@ -30,7 +31,7 @@ const UART_IMSC_RXIM: u16 = 1 << 4;
 /// 受信割り込みが起きた事を示すビット
 const UART_RIS_RXRIS: u16 = 1 << 4;
 /// PL011の仮想割り込み番号
-const PL011_INT_ID: u32 = 33;
+pub const PL011_INT_ID: u32 = 33;
 
 pub struct Pl011Mmio {
     flag: u16,
@@ -67,7 +68,30 @@ impl Pl011Mmio {
     }
 
     #[cfg(feature = "rpi4")]
-    pub fn push(&mut self, data: u8) {}
+    pub fn push(&mut self, data: u8) {
+        for c in &mut self.read_buffer {
+            if *c == 0 {
+                *c = data;
+                break;
+            }
+        }
+
+        // RX FIFOが空ではないことを知らせる
+        self.flag &= !(UART_FR_RXFE);
+        
+        // 受信割り込みが有効な場合
+        if (self.interrupt_mask & UART_IMSC_RXIM) != 0 {
+            // 受信割り込みが起こったことを通知する
+            self.raw_interrupt_status |= UART_RIS_RXRIS;
+            crate::mmio::gicv2::inject_interrupt(PL011_INT_ID);
+        }
+    }
+    
+    pub fn is_rx_pending(&mut self) -> bool {
+        let ris = self.read(UART_RIS, 64).unwrap_or(0);
+        let imsc =  self.read(UART_IMSC, 64).unwrap_or(0);
+        ris & imsc == 1
+    }
 }
 
 impl MmioHandler for Pl011Mmio {
@@ -97,6 +121,9 @@ impl MmioHandler for Pl011Mmio {
             }
             UART_RIS => {
                 value = self.raw_interrupt_status as u64;
+            }
+            UART_MIS => {
+                value = (self.raw_interrupt_status & self.interrupt_mask) as u64;
             }
             UART_PERIPH_ID0 => {
                 value = 0x11;

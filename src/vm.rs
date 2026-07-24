@@ -510,22 +510,33 @@ fn setup_hypervisor_registers() {
 }
 
 pub fn input_uart() {
-    let c = (PL011_DEVICE.lock()).getc();
-    if c.is_err() {
-        log_warn!("Failed to get a character");
-        return;
-    }
-    let c = c.unwrap().unwrap_or(0);
-    if c == 0 {
-        return;
-    }
+    loop {
+        let c = (PL011_DEVICE.lock()).getc();
+        let vm = get_active_vm();
+        match c {
+            Ok(Some(ch)) => {
+                // crate::log_info!("input: {}", ch as char);
 
-    let vm = get_active_vm();
+                #[cfg(feature = "rpi4")]
+                unsafe {
+                    (*vm.get_pl011_mmio()).push(ch);
+                };
 
-    #[cfg(feature = "qemu-virt")]
-    unsafe {
-        (*vm.get_pl011_mmio()).push(c, &mut *vm.get_gic_distributor_mmio())
-    };
+                #[cfg(feature = "qemu-virt")]
+                unsafe {
+                    (*vm.get_pl011_mmio()).push(ch, &mut *vm.get_gic_distributor_mmio());
+                };
+            }
+            Ok(None) => {
+                break;
+            }
+            Err(e) => {
+                log_warn!("Failed to get a character");
+                break;
+            }
+        }
+    }
+    PL011_DEVICE.lock().clear_interrpt();
 }
 
 pub fn get_current_vm() -> &'static mut VM {
