@@ -3,7 +3,10 @@
 //!
 
 use crate::{
-    arch::aarch64::{get_hcr_el2, registers::HCR_EL2_VI, set_hcr_el2}, mmio::pl011::PL011_INT_ID, mutex::Mutex, vm::{MmioHandler, get_active_vm},
+    arch::aarch64::{get_hcr_el2, registers::HCR_EL2_VI, set_hcr_el2},
+    mmio::pl011::PL011_INT_ID,
+    mutex::Mutex,
+    vm::{MmioHandler, get_active_vm},
 };
 
 const GICD_CTLR: usize = 0x000;
@@ -118,8 +121,7 @@ impl MmioHandler for GicCpuInterfaceMmio {
             GICC_PMR => self.pmr = value as u32,
             GICC_BPR => self.bpr = value as u32,
             #[cfg(feature = "rpi4")]
-            GICC_EOIR =>
-            {
+            GICC_EOIR => {
                 use crate::{GENERIC_TIMER_INT_ID, GICC_BASE, GICD_BASE, drivers::gicv2::GicV2};
                 use core::sync::atomic::Ordering::Relaxed;
 

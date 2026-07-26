@@ -78,7 +78,7 @@ impl Pl011Mmio {
 
         // RX FIFOが空ではないことを知らせる
         self.flag &= !(UART_FR_RXFE);
-        
+
         // 受信割り込みが有効な場合
         if (self.interrupt_mask & UART_IMSC_RXIM) != 0 {
             // 受信割り込みが起こったことを通知する
@@ -86,10 +86,10 @@ impl Pl011Mmio {
             crate::mmio::gicv2::inject_interrupt(PL011_INT_ID);
         }
     }
-    
+
     pub fn is_rx_pending(&mut self) -> bool {
         let ris = self.read(UART_RIS, 64).unwrap_or(0);
-        let imsc =  self.read(UART_IMSC, 64).unwrap_or(0);
+        let imsc = self.read(UART_IMSC, 64).unwrap_or(0);
         ris & imsc != 0
     }
 }
