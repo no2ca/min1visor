@@ -291,7 +291,7 @@ fn data_abort_handler(registers: &mut Registers, esr_el2: u64) {
 
 #[cfg(feature = "rpi4")]
 extern "C" fn irq_handler() {
-    use crate::{GICC_BASE, GICD_BASE, PL011_DEVICE, drivers::gicv2::GicV2};
+    use crate::{GENERIC_TIMER_INT_ID, GICC_BASE, GICD_BASE, PL011_DEVICE, drivers::gicv2::GicV2};
     use core::sync::atomic::Ordering::Relaxed;
 
     let gicd_base = GICD_BASE.load(Relaxed);
@@ -301,12 +301,12 @@ extern "C" fn irq_handler() {
 
     let int_id = iar & 0x3ff;
     let pl011_int_id = (PL011_DEVICE.lock()).interrupt_number;
+    let generic_timer_int_id = GENERIC_TIMER_INT_ID.load(Relaxed);
     if int_id == pl011_int_id {
         vm::input_uart();
-    } else if int_id == 27 {
-        // TODO: タイマー割り込みの番号はDTBから取得する方式にする
-        gic.disable_interrupt(27);
-        crate::mmio::gicv2::inject_interrupt(27);
+    } else if int_id == generic_timer_int_id {
+        gic.disable_interrupt(generic_timer_int_id);
+        crate::mmio::gicv2::inject_interrupt(generic_timer_int_id);
     } else {
         crate::log_info!("spurious/other irq: {}", int_id);
     }

@@ -120,15 +120,16 @@ impl MmioHandler for GicCpuInterfaceMmio {
             #[cfg(feature = "rpi4")]
             GICC_EOIR =>
             {
-                use crate::{GICC_BASE, GICD_BASE, drivers::gicv2::GicV2};
+                use crate::{GENERIC_TIMER_INT_ID, GICC_BASE, GICD_BASE, drivers::gicv2::GicV2};
                 use core::sync::atomic::Ordering::Relaxed;
 
                 let gicd_base = GICD_BASE.load(Relaxed);
                 let gicc_base = GICC_BASE.load(Relaxed);
                 let gic = GicV2::new(gicd_base, gicc_base);
 
-                if value & 0x3ff == 27 {
-                    gic.enable_ppi(27);
+                let generic_timer_int_id = GENERIC_TIMER_INT_ID.load(Relaxed);
+                if value & 0x3ff == generic_timer_int_id.into() {
+                    gic.enable_ppi(generic_timer_int_id);
                 }
                 if value & 0x3ff == PL011_INT_ID.into() {
                     let pl011_mmio = unsafe { &mut *get_active_vm().get_pl011_mmio() };

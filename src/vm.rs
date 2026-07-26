@@ -476,7 +476,7 @@ pub fn create_vm(
         pl011_mmio_ptr,
     );
 
-    let guest_entry_point = GUEST_RAM_BASE + (linux_image_address - HOST_RAM_BASE);
+    let guest_entry_point: usize = GUEST_RAM_BASE + (linux_image_address - HOST_RAM_BASE);
     let guest_dtb_address = GUEST_RAM_BASE + (dtb_address - HOST_RAM_BASE);
     log_debug!(
         "Linux Image placed at host={:#X}, guest={:#X}, size={:#X}, text_offset={:#X}",

@@ -77,7 +77,7 @@ use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::sync::atomic::AtomicU8;
 #[cfg(feature = "rpi4")]
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicU32, AtomicUsize};
 use core::{ffi::CStr, slice};
 
 //
@@ -96,6 +96,8 @@ static mut FAT32: MaybeUninit<fat32::Fat32> = MaybeUninit::uninit();
 pub static GICD_BASE: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "rpi4")]
 pub static GICC_BASE: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "rpi4")]
+pub static GENERIC_TIMER_INT_ID: AtomicU32 = AtomicU32::new(0);
 
 //
 // constants
@@ -213,8 +215,6 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
         // TODO: ここら辺の処理を関数にまとめる
         let pl011_int_id = (*PL011_DEVICE.lock()).interrupt_number;
         log_debug!("pl011 int_id: {}", pl011_int_id);
-        gic.enable_spi(pl011_int_id);
-        PL011_DEVICE.lock().enable_interrupt();
 
         let guest_dtb_addr_str = unsafe { CStr::from_ptr(args[GUEST_DTB_ARG_INDEX]) }
             .to_str()
@@ -228,7 +228,17 @@ pub extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
             guest_dtb_address,
             guest_dtb.get_total_size(),
         );
-        gic.enable_ppi(27);
+
+        // PL011のRX割り込みは、VMがVM_MANAGERに登録されアクティブになった後で有効化する。
+        // create_vm()完了前(active_vm_id未設定)に有効化すると、実機では本物のUART受信
+        // 割り込みがこの間に飛んでくることがあり、vm::get_active_vm()がpanicする
+        // (QEMUではこのタイミングで受信が発生しないため再現しない)。
+        gic.enable_spi(pl011_int_id);
+        PL011_DEVICE.lock().enable_interrupt();
+
+        let generic_timer_int_id = init_generic_timer(&dtb);
+        log_debug!("generic timer int_id: {}", generic_timer_int_id);
+        gic.enable_ppi(generic_timer_int_id);
         log_info!(
             "Booting Linux at {:#X} with DTB at {:#X}...",
             boot_address,
@@ -458,6 +468,28 @@ fn init_gicv2(dtb: &dtb::Dtb) -> GicV2 {
     let gic = GicV2::new(gicd_base, gicc_base);
     gic.dump_gicd_info();
     gic
+}
+
+#[cfg(feature = "rpi4")]
+fn init_generic_timer(dtb: &dtb::Dtb) -> u32 {
+    const DTB_GIC_PPI: u32 = 1;
+    const GIC_PPI_BASE: u32 = 16;
+    const VIRTUAL_TIMER_INTERRUPT_INDEX: usize = 2;
+    const DTB_INTERRUPT_CELLS: usize = 3;
+
+    let generic_timer_node = dtb
+        .search_node_by_compatible(b"arm,armv8-timer", None)
+        .expect("Failed to find generic timer");
+    let interrupts = dtb.read_property_as_u32_array(
+        &dtb.get_property(&generic_timer_node, b"interrupts")
+            .expect("Failed to find generic timer interrupts"),
+    );
+    let offset = VIRTUAL_TIMER_INTERRUPT_INDEX * DTB_INTERRUPT_CELLS;
+    assert_eq!(u32::from_be(interrupts[offset]), DTB_GIC_PPI);
+
+    let int_id = GIC_PPI_BASE + u32::from_be(interrupts[offset + 1]);
+    GENERIC_TIMER_INT_ID.store(int_id, core::sync::atomic::Ordering::Relaxed);
+    int_id
 }
 
 #[cfg(feature = "qemu-virt")]
