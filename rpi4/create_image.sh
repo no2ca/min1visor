@@ -50,18 +50,22 @@ if [ -f "$RPI4_IMAGE" ]; then
     rm -f "$RPI4_IMAGE"
 fi
 
-echo "[1/6] Creating $RPI4_IMAGE (${RPI4_IMAGE_SIZE_MB} MiB) ..."
+echo "[1/7] Building min1visor binary ..."
+cargo fmt --all
+cargo b -r
+
+echo "[2/7] Creating $RPI4_IMAGE (${RPI4_IMAGE_SIZE_MB} MiB) ..."
 dd if=/dev/zero of="$RPI4_IMAGE" bs=1M count="$RPI4_IMAGE_SIZE_MB"
 
-echo "[2/6] Creating FAT32 partition ..."
+echo "[3/7] Creating FAT32 partition ..."
 sudo sfdisk "$RPI4_IMAGE" << EOF
 $RPI4_PARTITION_START_SECTOR,,b,*
 EOF
 
-echo "[3/6] Formatting partition ..."
+echo "[4/7] Formatting partition ..."
 sudo mkfs.vfat -F 32 --offset="$RPI4_PARTITION_START_SECTOR" "$RPI4_IMAGE"
 
-echo "[4/6] Generating guest DTB and boot.scr ..."
+echo "[5/7] Generating guest DTB and boot.scr ..."
 ENTRY_POINT=$(readelf -h "$RPI4_KERNEL" \
     | grep "Entry point address" \
     | awk '{print $4}')
@@ -77,12 +81,12 @@ mkimage -A arm64 -T script -C none -n "RPi4 Boot Script" \
     -d "$RPI4_DIR/boot.txt" "$RPI4_DIR/boot.scr"
 
 
-echo "[5/6] Mounting image ..."
+echo "[6/7] Mounting image ..."
 LOOP_DEV=$(sudo losetup -Pf --show "$RPI4_IMAGE")
 sudo mkdir -p "$RPI4_MOUNT_DIR"
 sudo mount "${LOOP_DEV}p1" "$RPI4_MOUNT_DIR"
 
-echo "[6/6] Copying files ..."
+echo "[7/7] Copying files ..."
 cp "$RPI4_KERNEL" "$RPI4_DIR/min1.elf"
 
 COPIED=0
